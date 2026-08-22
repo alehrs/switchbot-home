@@ -1,0 +1,50 @@
+name: SwitchBotHome
+options:
+  bundleIdPrefix: dev.switchbothome
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  SwitchBotHome:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SwitchBotHome
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.switchbothome.SwitchBotHome
+        INFOPLIST_FILE: SwitchBotHome/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: SwitchBotHome/SwitchBotHome.entitlements
+  SwitchBotHomeTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SwitchBotHomeTests
+    dependencies:
+      - target: SwitchBotHome
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.switchbothome.SwitchBotHomeTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SwitchBotHome.app/Contents/MacOS/SwitchBotHome"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  SwitchBotHome:
+    build:
+      targets:
+        SwitchBotHome: all
+        SwitchBotHomeTests: [test]
+    test:
+      targets:
+        - SwitchBotHomeTests
+    run:
+      config: Debug

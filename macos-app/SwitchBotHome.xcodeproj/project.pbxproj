@@ -1,0 +1,577 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03C15B8F9341BB8910AAC3EB /* OfflineBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */; };
+		105606C945B4D356C81FC8AE /* BackendCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7C462637E7E3B0C603E230 /* BackendCoding.swift */; };
+		19EB0EC05593693076BBAC0E /* DeviceNumbering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3D79C4117F5D684E38E959 /* DeviceNumbering.swift */; };
+		1C3E5DB74FE02CA61EC6EF09 /* ChartDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F5D29C1D1D035C9BCD64B1B /* ChartDomain.swift */; };
+		1F86384ED5653907459D2B13 /* GroupingRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4415FA7F6657ACFBF0E114E2 /* GroupingRules.swift */; };
+		2F8DDC08CAE6B19F08200419 /* DayRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8B3D29B21719B9E558A988 /* DayRangeTests.swift */; };
+		38F38F2E06EE8A9E9AC58330 /* ReadingsDownsampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEF9442260CFDBEAD537824 /* ReadingsDownsampler.swift */; };
+		3F43BA0D3CFE4552E9D2F9A1 /* RoomSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06CADAAC106573B18F209F0 /* RoomSectionView.swift */; };
+		4034E26227BE4E2770B3AC75 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48FC1E529447219704CEDB9 /* AppSettings.swift */; };
+		475C69101BBE84624A1C9112 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADFD61F5C1DE8A15791AE64A /* ModelDecodingTests.swift */; };
+		62E334233EB34758C1445C46 /* PopoverContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AD71A68B03E8313854D784 /* PopoverContentView.swift */; };
+		633FEDEE72824DB842712283 /* DeviceRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C0F16A31DA3BA3F70DAEE5 /* DeviceRowView.swift */; };
+		652573F5ECF4AC1CF53EFA55 /* PollingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8849D5025285EE78018583FB /* PollingService.swift */; };
+		6D0409165A0615B7E5F68D47 /* Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663E4A4E0FD5254C82BDD0CB /* Formatting.swift */; };
+		7AA1C25FD5E4CC6BA3BC6F70 /* FormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F121CCFC631A68ED6CF39B5 /* FormattingTests.swift */; };
+		7F586654B5A2B2274EEBB7BF /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C3292F3867A85B24712377 /* SettingsView.swift */; };
+		82FB2EBFDD9FE31FB8234403 /* TrendIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC8CB4D4BA17B58D40E59D63 /* TrendIndicatorView.swift */; };
+		87C6D7B3E5A5B0C9815435EE /* DeviceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F086906AAFEBC519A59A05EE /* DeviceDetailView.swift */; };
+		9009638559B8612F3B6D60E2 /* ReadingsDownsamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F674582B2D9767AA1F67A508 /* ReadingsDownsamplerTests.swift */; };
+		90874FEBAC09E026DF38AB09 /* GroupingRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F213B13008472D088BC4E336 /* GroupingRulesTests.swift */; };
+		9CD7A1D404D3EC8EB4E6A1A9 /* MenuBarLabelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D29A5AC1AF5D341DAD13CB85 /* MenuBarLabelView.swift */; };
+		A2CFDBFE80526EC58602094E /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FCB7B2F97556C9C210B2E6 /* AppStore.swift */; };
+		A537A12A4D53F7863CB79D76 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC9489F1BBB65374816D761 /* APIClient.swift */; };
+		A5E57832D67446BE792F1CAA /* LocalCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03AB5AFE346D28B034CE3E82 /* LocalCache.swift */; };
+		A9AC49C704A151FB9CEDE127 /* AppStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB42E6AFFDE66B8A4393A0A3 /* AppStoreTests.swift */; };
+		ABFCB2229668A0D02525B3F2 /* SwitchBotHomeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB4810D558ED0CC9B716246 /* SwitchBotHomeApp.swift */; };
+		BD7C337E282CA2FC37F14B45 /* TrendCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 937252AA29DC6B65F2870AAF /* TrendCodableTests.swift */; };
+		BE2D0E1F437799FFF5BAE86B /* Reading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88FDEC75CCB62D3B8C61943B /* Reading.swift */; };
+		CE41387F97941A4890E65727 /* DeviceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3009F4C93E6A10E479C6E /* DeviceSnapshot.swift */; };
+		CEACED58564E34AE750AF8BB /* DeviceNumberingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703BAD427DD480C9DC984986 /* DeviceNumberingTests.swift */; };
+		CFD9990EA5526D79DCFCE554 /* Device.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0692F1590CD0ABF8F8A8171B /* Device.swift */; };
+		D3D2016C7BC9EB060C9B99AB /* TrendCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E645CD183AE0B040E6F49F5 /* TrendCalculator.swift */; };
+		DDDCC794AB582C182B258C7C /* TrendCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDAFC6CFE755160A377B2F84 /* TrendCalculatorTests.swift */; };
+		EF620F0C200309BE755D94A5 /* ChartDomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F036AB240425A3100C9B0137 /* ChartDomainTests.swift */; };
+		F3645A3F5F2096B1AD07DEFC /* DayRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C2BEE4A0D57060693164C0 /* DayRange.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1C221F2D0248F7CF7AEB01AE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5FD004F4001FE1E067D98CD5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5873CD26CC77ABC1C552A6C2;
+			remoteInfo = SwitchBotHome;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		03AB5AFE346D28B034CE3E82 /* LocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCache.swift; sourceTree = "<group>"; };
+		05C0F16A31DA3BA3F70DAEE5 /* DeviceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRowView.swift; sourceTree = "<group>"; };
+		0692F1590CD0ABF8F8A8171B /* Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Device.swift; sourceTree = "<group>"; };
+		12AD71A68B03E8313854D784 /* PopoverContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverContentView.swift; sourceTree = "<group>"; };
+		12C3292F3867A85B24712377 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1B7C462637E7E3B0C603E230 /* BackendCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendCoding.swift; sourceTree = "<group>"; };
+		1E645CD183AE0B040E6F49F5 /* TrendCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendCalculator.swift; sourceTree = "<group>"; };
+		1F5D29C1D1D035C9BCD64B1B /* ChartDomain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDomain.swift; sourceTree = "<group>"; };
+		4415FA7F6657ACFBF0E114E2 /* GroupingRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupingRules.swift; sourceTree = "<group>"; };
+		5D8B3D29B21719B9E558A988 /* DayRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRangeTests.swift; sourceTree = "<group>"; };
+		61C2BEE4A0D57060693164C0 /* DayRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRange.swift; sourceTree = "<group>"; };
+		663E4A4E0FD5254C82BDD0CB /* Formatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatting.swift; sourceTree = "<group>"; };
+		66838332253E31289DDC0B12 /* SwitchBotHome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwitchBotHome.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		703BAD427DD480C9DC984986 /* DeviceNumberingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceNumberingTests.swift; sourceTree = "<group>"; };
+		7CB3009F4C93E6A10E479C6E /* DeviceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSnapshot.swift; sourceTree = "<group>"; };
+		86FCB7B2F97556C9C210B2E6 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		8849D5025285EE78018583FB /* PollingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingService.swift; sourceTree = "<group>"; };
+		88FDEC75CCB62D3B8C61943B /* Reading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reading.swift; sourceTree = "<group>"; };
+		8C3D79C4117F5D684E38E959 /* DeviceNumbering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceNumbering.swift; sourceTree = "<group>"; };
+		8EF7439CD786EEA54BC6595F /* SwitchBotHomeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwitchBotHomeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8F121CCFC631A68ED6CF39B5 /* FormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingTests.swift; sourceTree = "<group>"; };
+		90DE080D647AB009F527795B /* SwitchBotHome.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SwitchBotHome.entitlements; sourceTree = "<group>"; };
+		937252AA29DC6B65F2870AAF /* TrendCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendCodableTests.swift; sourceTree = "<group>"; };
+		AC8CB4D4BA17B58D40E59D63 /* TrendIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendIndicatorView.swift; sourceTree = "<group>"; };
+		ACEF9442260CFDBEAD537824 /* ReadingsDownsampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingsDownsampler.swift; sourceTree = "<group>"; };
+		ADFD61F5C1DE8A15791AE64A /* ModelDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
+		BB42E6AFFDE66B8A4393A0A3 /* AppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreTests.swift; sourceTree = "<group>"; };
+		BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineBannerView.swift; sourceTree = "<group>"; };
+		C93F4A68630E6E73428B2C79 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D29A5AC1AF5D341DAD13CB85 /* MenuBarLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabelView.swift; sourceTree = "<group>"; };
+		D48FC1E529447219704CEDB9 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		DDAFC6CFE755160A377B2F84 /* TrendCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendCalculatorTests.swift; sourceTree = "<group>"; };
+		DEC9489F1BBB65374816D761 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		E06CADAAC106573B18F209F0 /* RoomSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomSectionView.swift; sourceTree = "<group>"; };
+		EFB4810D558ED0CC9B716246 /* SwitchBotHomeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchBotHomeApp.swift; sourceTree = "<group>"; };
+		F036AB240425A3100C9B0137 /* ChartDomainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDomainTests.swift; sourceTree = "<group>"; };
+		F086906AAFEBC519A59A05EE /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetailView.swift; sourceTree = "<group>"; };
+		F213B13008472D088BC4E336 /* GroupingRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupingRulesTests.swift; sourceTree = "<group>"; };
+		F674582B2D9767AA1F67A508 /* ReadingsDownsamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingsDownsamplerTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		12401088DADF73457577CE18 = {
+			isa = PBXGroup;
+			children = (
+				3C0E6E3C9DDA66E729C42ACA /* SwitchBotHome */,
+				C478203496545EE1D691DE85 /* SwitchBotHomeTests */,
+				E1E9512DAEF973F8F920D528 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		28046107DAF44FA0FC02185D /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				D48FC1E529447219704CEDB9 /* AppSettings.swift */,
+				12C3292F3867A85B24712377 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		2A1E815A5D0FF9C019B2CF55 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				1F5D29C1D1D035C9BCD64B1B /* ChartDomain.swift */,
+				61C2BEE4A0D57060693164C0 /* DayRange.swift */,
+				8C3D79C4117F5D684E38E959 /* DeviceNumbering.swift */,
+				663E4A4E0FD5254C82BDD0CB /* Formatting.swift */,
+				4415FA7F6657ACFBF0E114E2 /* GroupingRules.swift */,
+				03AB5AFE346D28B034CE3E82 /* LocalCache.swift */,
+				8849D5025285EE78018583FB /* PollingService.swift */,
+				ACEF9442260CFDBEAD537824 /* ReadingsDownsampler.swift */,
+				1E645CD183AE0B040E6F49F5 /* TrendCalculator.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		3C0E6E3C9DDA66E729C42ACA /* SwitchBotHome */ = {
+			isa = PBXGroup;
+			children = (
+				C93F4A68630E6E73428B2C79 /* Info.plist */,
+				90DE080D647AB009F527795B /* SwitchBotHome.entitlements */,
+				EFB4810D558ED0CC9B716246 /* SwitchBotHomeApp.swift */,
+				C1F93A2BEBD91A6F1B601A32 /* Models */,
+				BA5F939410C49DC855B1698D /* Networking */,
+				2A1E815A5D0FF9C019B2CF55 /* Services */,
+				28046107DAF44FA0FC02185D /* Settings */,
+				B9EB148B192639DF616206A7 /* Store */,
+				DED781DCF7D5B4E167F364E4 /* Views */,
+			);
+			path = SwitchBotHome;
+			sourceTree = "<group>";
+		};
+		B9EB148B192639DF616206A7 /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				86FCB7B2F97556C9C210B2E6 /* AppStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		BA5F939410C49DC855B1698D /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				DEC9489F1BBB65374816D761 /* APIClient.swift */,
+				1B7C462637E7E3B0C603E230 /* BackendCoding.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		C1F93A2BEBD91A6F1B601A32 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				0692F1590CD0ABF8F8A8171B /* Device.swift */,
+				7CB3009F4C93E6A10E479C6E /* DeviceSnapshot.swift */,
+				88FDEC75CCB62D3B8C61943B /* Reading.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C478203496545EE1D691DE85 /* SwitchBotHomeTests */ = {
+			isa = PBXGroup;
+			children = (
+				BB42E6AFFDE66B8A4393A0A3 /* AppStoreTests.swift */,
+				F036AB240425A3100C9B0137 /* ChartDomainTests.swift */,
+				5D8B3D29B21719B9E558A988 /* DayRangeTests.swift */,
+				703BAD427DD480C9DC984986 /* DeviceNumberingTests.swift */,
+				8F121CCFC631A68ED6CF39B5 /* FormattingTests.swift */,
+				F213B13008472D088BC4E336 /* GroupingRulesTests.swift */,
+				ADFD61F5C1DE8A15791AE64A /* ModelDecodingTests.swift */,
+				F674582B2D9767AA1F67A508 /* ReadingsDownsamplerTests.swift */,
+				DDAFC6CFE755160A377B2F84 /* TrendCalculatorTests.swift */,
+				937252AA29DC6B65F2870AAF /* TrendCodableTests.swift */,
+			);
+			path = SwitchBotHomeTests;
+			sourceTree = "<group>";
+		};
+		DED781DCF7D5B4E167F364E4 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				F086906AAFEBC519A59A05EE /* DeviceDetailView.swift */,
+				05C0F16A31DA3BA3F70DAEE5 /* DeviceRowView.swift */,
+				D29A5AC1AF5D341DAD13CB85 /* MenuBarLabelView.swift */,
+				BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */,
+				12AD71A68B03E8313854D784 /* PopoverContentView.swift */,
+				E06CADAAC106573B18F209F0 /* RoomSectionView.swift */,
+				AC8CB4D4BA17B58D40E59D63 /* TrendIndicatorView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		E1E9512DAEF973F8F920D528 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				66838332253E31289DDC0B12 /* SwitchBotHome.app */,
+				8EF7439CD786EEA54BC6595F /* SwitchBotHomeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		04AC7B317A55C79F7EF85B59 /* SwitchBotHomeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 81C59C7E5C9A838383B22CA2 /* Build configuration list for PBXNativeTarget "SwitchBotHomeTests" */;
+			buildPhases = (
+				366DEBD5F4360A2D87ABF05A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A8FAC3885A4BC72D7DBAC3E4 /* PBXTargetDependency */,
+			);
+			name = SwitchBotHomeTests;
+			packageProductDependencies = (
+			);
+			productName = SwitchBotHomeTests;
+			productReference = 8EF7439CD786EEA54BC6595F /* SwitchBotHomeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		5873CD26CC77ABC1C552A6C2 /* SwitchBotHome */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7DA265C46D15E43DA9745FC8 /* Build configuration list for PBXNativeTarget "SwitchBotHome" */;
+			buildPhases = (
+				B1685A092357A91BE9AC29E7 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SwitchBotHome;
+			packageProductDependencies = (
+			);
+			productName = SwitchBotHome;
+			productReference = 66838332253E31289DDC0B12 /* SwitchBotHome.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5FD004F4001FE1E067D98CD5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 317D81529914A5565ACBEF20 /* Build configuration list for PBXProject "SwitchBotHome" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 12401088DADF73457577CE18;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = E1E9512DAEF973F8F920D528 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5873CD26CC77ABC1C552A6C2 /* SwitchBotHome */,
+				04AC7B317A55C79F7EF85B59 /* SwitchBotHomeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		366DEBD5F4360A2D87ABF05A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9AC49C704A151FB9CEDE127 /* AppStoreTests.swift in Sources */,
+				EF620F0C200309BE755D94A5 /* ChartDomainTests.swift in Sources */,
+				2F8DDC08CAE6B19F08200419 /* DayRangeTests.swift in Sources */,
+				CEACED58564E34AE750AF8BB /* DeviceNumberingTests.swift in Sources */,
+				7AA1C25FD5E4CC6BA3BC6F70 /* FormattingTests.swift in Sources */,
+				90874FEBAC09E026DF38AB09 /* GroupingRulesTests.swift in Sources */,
+				475C69101BBE84624A1C9112 /* ModelDecodingTests.swift in Sources */,
+				9009638559B8612F3B6D60E2 /* ReadingsDownsamplerTests.swift in Sources */,
+				DDDCC794AB582C182B258C7C /* TrendCalculatorTests.swift in Sources */,
+				BD7C337E282CA2FC37F14B45 /* TrendCodableTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1685A092357A91BE9AC29E7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A537A12A4D53F7863CB79D76 /* APIClient.swift in Sources */,
+				4034E26227BE4E2770B3AC75 /* AppSettings.swift in Sources */,
+				A2CFDBFE80526EC58602094E /* AppStore.swift in Sources */,
+				105606C945B4D356C81FC8AE /* BackendCoding.swift in Sources */,
+				1C3E5DB74FE02CA61EC6EF09 /* ChartDomain.swift in Sources */,
+				F3645A3F5F2096B1AD07DEFC /* DayRange.swift in Sources */,
+				CFD9990EA5526D79DCFCE554 /* Device.swift in Sources */,
+				87C6D7B3E5A5B0C9815435EE /* DeviceDetailView.swift in Sources */,
+				19EB0EC05593693076BBAC0E /* DeviceNumbering.swift in Sources */,
+				633FEDEE72824DB842712283 /* DeviceRowView.swift in Sources */,
+				CE41387F97941A4890E65727 /* DeviceSnapshot.swift in Sources */,
+				6D0409165A0615B7E5F68D47 /* Formatting.swift in Sources */,
+				1F86384ED5653907459D2B13 /* GroupingRules.swift in Sources */,
+				A5E57832D67446BE792F1CAA /* LocalCache.swift in Sources */,
+				9CD7A1D404D3EC8EB4E6A1A9 /* MenuBarLabelView.swift in Sources */,
+				03C15B8F9341BB8910AAC3EB /* OfflineBannerView.swift in Sources */,
+				652573F5ECF4AC1CF53EFA55 /* PollingService.swift in Sources */,
+				62E334233EB34758C1445C46 /* PopoverContentView.swift in Sources */,
+				BE2D0E1F437799FFF5BAE86B /* Reading.swift in Sources */,
+				38F38F2E06EE8A9E9AC58330 /* ReadingsDownsampler.swift in Sources */,
+				3F43BA0D3CFE4552E9D2F9A1 /* RoomSectionView.swift in Sources */,
+				7F586654B5A2B2274EEBB7BF /* SettingsView.swift in Sources */,
+				ABFCB2229668A0D02525B3F2 /* SwitchBotHomeApp.swift in Sources */,
+				D3D2016C7BC9EB060C9B99AB /* TrendCalculator.swift in Sources */,
+				82FB2EBFDD9FE31FB8234403 /* TrendIndicatorView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A8FAC3885A4BC72D7DBAC3E4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5873CD26CC77ABC1C552A6C2 /* SwitchBotHome */;
+			targetProxy = 1C221F2D0248F7CF7AEB01AE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4EBEB2DB25EF3A215AF3D9E5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		61B9A91D6C31C3DE3EE1B6A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SwitchBotHome/SwitchBotHome.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SwitchBotHome/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.switchbothome.SwitchBotHome;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		7CEE5B226953D0C583C68F89 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.switchbothome.SwitchBotHomeTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SwitchBotHome.app/Contents/MacOS/SwitchBotHome";
+			};
+			name = Release;
+		};
+		8E80F7BAF6C865DAB699980B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.switchbothome.SwitchBotHomeTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SwitchBotHome.app/Contents/MacOS/SwitchBotHome";
+			};
+			name = Debug;
+		};
+		961DC9C55955E7C5813D4582 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SwitchBotHome/SwitchBotHome.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SwitchBotHome/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.switchbothome.SwitchBotHome;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		C6A43DAE773D4765364F5D3B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		317D81529914A5565ACBEF20 /* Build configuration list for PBXProject "SwitchBotHome" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6A43DAE773D4765364F5D3B /* Debug */,
+				4EBEB2DB25EF3A215AF3D9E5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7DA265C46D15E43DA9745FC8 /* Build configuration list for PBXNativeTarget "SwitchBotHome" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				961DC9C55955E7C5813D4582 /* Debug */,
+				61B9A91D6C31C3DE3EE1B6A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		81C59C7E5C9A838383B22CA2 /* Build configuration list for PBXNativeTarget "SwitchBotHomeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8E80F7BAF6C865DAB699980B /* Debug */,
+				7CEE5B226953D0C583C68F89 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5FD004F4001FE1E067D98CD5 /* Project object */;
+}

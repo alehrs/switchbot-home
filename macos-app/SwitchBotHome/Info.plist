@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <!-- Menu-bar-only: no Dock icon, no app-switcher entry. -->
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- The backend has no TLS and is always loopback or a LAN IP,
+             never a public host — this is the ATS key built for exactly
+             that (plain HTTP to loopback/private IP ranges/.local hosts),
+             not the blanket NSAllowsArbitraryLoads. -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <!-- Required on modern macOS for the separate "Local Network"
+         privacy permission that gates outbound LAN connections; without
+         it the OS can fail the connection silently instead of prompting. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>SwitchBotHome connects to your self-hosted backend on your local network to show live sensor readings.</string>
+</dict>
+</plist>

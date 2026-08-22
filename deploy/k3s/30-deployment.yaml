@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: switchbot-home-backend
+  namespace: switchbot-home
+spec:
+  replicas: 1
+  # Not RollingUpdate: two pods can't share the same SQLite file or the
+  # same host's Bluetooth adapter at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: switchbot-home-backend
+  template:
+    metadata:
+      labels:
+        app: switchbot-home-backend
+    spec:
+      # BLE/HCI access doesn't work meaningfully through a network-
+      # namespaced container — see docs/specs/installation-and-deployment.md §7.
+      # This also means BIND_ADDRESS:3000 binds directly on the node, so
+      # make sure nothing else on that node already uses port 3000.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: backend
+          image: switchbot-home-backend:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: switchbot-home-backend-config
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: dbus
+              mountPath: /run/dbus/system_bus_socket
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: switchbot-home-backend-data
+        - name: dbus
+          hostPath:
+            path: /run/dbus/system_bus_socket
+            type: Socket

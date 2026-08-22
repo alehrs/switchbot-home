@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: switchbot-home-backend
+  namespace: switchbot-home
+spec:
+  # With hostNetwork on the pod, the node's IP:3000 already reaches it
+  # directly — this Service is for in-cluster DNS convenience, not
+  # strictly required for reachability.
+  selector:
+    app: switchbot-home-backend
+  ports:
+    - port: 3000
+      targetPort: 3000

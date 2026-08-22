@@ -1,0 +1,69 @@
+### switchbot-home backend — manual API requests
+### Works with the VS Code "REST Client" extension or the IntelliJ/JetBrains
+### HTTP Client. Run `cargo run -p backend` first.
+
+@host = http://localhost:3000
+
+### List all devices (including blacklisted)
+GET {{host}}/devices
+
+### Latest reading for every non-blacklisted device
+GET {{host}}/readings/latest
+
+
+### --- Requests below need a real device_id ---
+### Copy one from the "List all devices" response above (or from the
+### `switchbot advertisement received` log lines with RUST_LOG=debug)
+### and set it here.
+
+@device_id = REPLACE_ME
+
+### Latest reading for one device
+GET {{host}}/devices/{{device_id}}/latest
+
+### Historical readings for one device (defaults to the last 24h)
+GET {{host}}/devices/{{device_id}}/readings
+
+### Historical readings within an explicit range
+GET {{host}}/devices/{{device_id}}/readings?from=2026-08-01T00:00:00Z&to=2026-08-22T00:00:00Z
+
+### Set a label and room
+PUT {{host}}/devices/{{device_id}}
+Content-Type: application/json
+
+{
+  "label": "Cucina",
+  "room": "Cucina"
+}
+
+### Clear the label (send an empty string)
+PUT {{host}}/devices/{{device_id}}
+Content-Type: application/json
+
+{
+  "label": ""
+}
+
+### Blacklist a device (collector will stop storing its readings)
+PUT {{host}}/devices/{{device_id}}
+Content-Type: application/json
+
+{
+  "blacklisted": true
+}
+
+### Un-blacklist it
+PUT {{host}}/devices/{{device_id}}
+Content-Type: application/json
+
+{
+  "blacklisted": false
+}
+
+### Update on an unknown device_id returns 404
+PUT {{host}}/devices/does-not-exist
+Content-Type: application/json
+
+{
+  "label": "x"
+}

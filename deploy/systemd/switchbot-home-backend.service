@@ -1,0 +1,16 @@
+[Unit]
+Description=switchbot-home backend (BLE collector + REST API)
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=switchbot-home
+Group=switchbot-home
+EnvironmentFile=/etc/switchbot-home/backend.env
+ExecStart=/usr/local/bin/switchbot-home-backend
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

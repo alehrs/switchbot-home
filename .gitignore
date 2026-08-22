@@ -1,0 +1,10 @@
+target/
+.DS_Store
+.env
+*.sqlite*
+
+# Xcode
+macos-app/build/
+xcuserdata/
+*.xcuserstate
+DerivedData/

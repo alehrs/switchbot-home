@@ -1,0 +1,36 @@
+name: Deploy backend to homelab
+
+# Runs on a self-hosted runner installed on the homelab itself (outbound-
+# only connection to GitHub, no inbound port opened on the home network —
+# see docs/specs/installation-and-deployment.md §8). Because the runner
+# already has local docker/kubectl access to the cluster it's deploying
+# to, this needs no registry and no stored credentials.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "deploy/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/deploy-backend.yml"
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, homelab]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f deploy/docker/Dockerfile -t switchbot-home-backend:${{ github.sha }} -t switchbot-home-backend:latest .
+
+      - name: Import image into k3s
+        run: docker save switchbot-home-backend:${{ github.sha }} | sudo k3s ctr images import -
+
+      - name: Apply manifests
+        run: kubectl apply -f deploy/k3s/
+
+      - name: Roll out new image
+        run: |
+          kubectl set image deployment/switchbot-home-backend backend=switchbot-home-backend:${{ github.sha }} -n switchbot-home
+          kubectl rollout status deployment/switchbot-home-backend -n switchbot-home --timeout=120s

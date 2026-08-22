@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: switchbot-home-backend-data
+  namespace: switchbot-home
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # k3s's built-in default storage class — swap this out if the cluster
+  # uses something else (NFS, Longhorn, ...).
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
