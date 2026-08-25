@@ -22,6 +22,14 @@ on:
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, X64]
+    env:
+      # The runner's default env has no usable kubeconfig: its shell's
+      # own KUBECONFIG default (/etc/rancher/k3s/k3s.yaml) is root-only,
+      # confirmed by a real CI failure (`permission denied`) — the
+      # runner process (started by systemd, not an interactive shell)
+      # doesn't pick up ~/.bashrc's override either. This is the same
+      # working kubeconfig path used for manual kubectl access.
+      KUBECONFIG: /home/multivac/.kube/config
     steps:
       - uses: actions/checkout@v4
 

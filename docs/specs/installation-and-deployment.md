@@ -295,17 +295,29 @@ push-to-deploy automation, not something "anyone with repo access" gets.
     and `deploy/**` so unrelated commits (docs, the macOS app) don't
     trigger a redeploy.
   - `runs-on: [self-hosted, Linux, X64]`.
+  - `env: KUBECONFIG: /home/multivac/.kube/config` at the job level — the
+    runner process is started by systemd, not an interactive shell, so it
+    never picks up `~/.bashrc`'s override, and without this every
+    `kubectl` call fails with `permission denied` reading the root-only
+    `/etc/rancher/k3s/k3s.yaml` default. Confirmed by a real failed CI run
+    (the first end-to-end trigger after the runner came online) before
+    this was added.
   - Steps: checkout → `docker build` (tag both
     `registry.local:5000/switchbot-home-backend:${{ github.sha }}` and
-    `:latest`) → `docker push` both tags → `kubectl apply -f deploy/k3s/`
-    (establishes the base manifest state; its Deployment still defaults to
-    the generic `switchbot-home-backend:local` image, unrelated to this
-    registry-tagged one) → `kubectl set image
-    deployment/switchbot-home-backend
-    backend=registry.local:5000/switchbot-home-backend:${{ github.sha }}`
-    → `kubectl rollout status deployment/switchbot-home-backend` (fails
-    the workflow if the rollout doesn't succeed, instead of silently
-    leaving a broken deployment).
+    `:latest`) → `docker push` both tags → `kubectl apply -f` the
+    namespace/ConfigMap/PVC/Service files only (**not**
+    `30-deployment.yaml`, which still points at the generic
+    `switchbot-home-backend:local` tag for the public installer's
+    benefit — applying it as-is would reset the live Deployment to that
+    unpullable tag for a few seconds, confirmed for real as an
+    `ErrImagePull` + pod kill/recreate during the manual deploy that set
+    this pipeline up) → `sed`-substitute the pushed
+    `registry.local:5000/switchbot-home-backend:${{ github.sha }}` tag
+    into `30-deployment.yaml` and `kubectl apply` that in one step, so the
+    live Deployment's image is never wrong even momentarily → `kubectl
+    rollout status deployment/switchbot-home-backend` (fails the workflow
+    if the rollout doesn't succeed, instead of silently leaving a broken
+    deployment).
 - Setting up the runner itself (registering it with GitHub, running it as
   a persistent service on the homelab) follows GitHub's own runner setup
   docs — not reproduced here since it's a one-time, account-specific,
