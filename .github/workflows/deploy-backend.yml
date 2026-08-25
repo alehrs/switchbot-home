@@ -21,7 +21,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, homelab]
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
 

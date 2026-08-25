@@ -239,10 +239,15 @@ Separate from the manual one-liner — this is the maintainer's own
 push-to-deploy automation, not something "anyone with repo access" gets.
 
 - **Connectivity**: a **self-hosted GitHub Actions runner installed on
-  the homelab** (registered against this repo, e.g. labeled
-  `self-hosted, homelab`). The runner makes outbound-only connections to
-  GitHub to pick up jobs — no inbound port needs to be opened on the home
-  network, unlike a GitHub-hosted runner trying to reach in.
+  the homelab** (registered against this repo). Labels come from the
+  runner's own defaults — `self-hosted, Linux, X64` — matching the
+  homelab's existing runners for other repos (`upvote-service`,
+  `alessiocavallo.it`), neither of which registers a custom label like
+  `homelab` either; `deploy-backend.yml`'s `runs-on:` matches that same
+  triplet rather than inventing a new label no runner would ever have.
+  The runner makes outbound-only connections to GitHub to pick up jobs —
+  no inbound port needs to be opened on the home network, unlike a
+  GitHub-hosted runner trying to reach in.
 - Because the runner lives on the homelab already, it has direct
   `docker`/`kubectl` access to the local k3s cluster. **This does push
   through the homelab's existing local registry (`registry.local:5000`),
@@ -263,7 +268,7 @@ push-to-deploy automation, not something "anyone with repo access" gets.
   - Trigger: `on: push: branches: [main]`, path-filtered to `backend/**`
     and `deploy/**` so unrelated commits (docs, the macOS app) don't
     trigger a redeploy.
-  - `runs-on: [self-hosted, homelab]`.
+  - `runs-on: [self-hosted, Linux, X64]`.
   - Steps: checkout → `docker build` (tag both
     `registry.local:5000/switchbot-home-backend:${{ github.sha }}` and
     `:latest`) → `docker push` both tags → `kubectl apply -f deploy/k3s/`
