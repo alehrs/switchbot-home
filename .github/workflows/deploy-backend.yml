@@ -33,10 +33,17 @@ jobs:
           docker push registry.local:5000/switchbot-home-backend:${{ github.sha }}
           docker push registry.local:5000/switchbot-home-backend:latest
 
-      - name: Apply manifests
-        run: kubectl apply -f deploy/k3s/
+      - name: Apply manifests (namespace, config, storage, service)
+        # Deliberately not 30-deployment.yaml here — it still points at
+        # the generic switchbot-home-backend:local tag for the public
+        # installer's benefit, and that tag doesn't exist in this
+        # registry. Applying it as-is would reset the live Deployment to
+        # an unpullable image for the few seconds before the next step
+        # fixes it — confirmed for real (ErrImagePull, pod killed and
+        # recreated) on the first manual deploy that set up this pipeline.
+        run: kubectl apply -f deploy/k3s/00-namespace.yaml -f deploy/k3s/10-configmap.yaml -f deploy/k3s/20-pvc.yaml -f deploy/k3s/40-service.yaml
 
-      - name: Roll out new image
+      - name: Apply deployment with the pushed image
         run: |
-          kubectl set image deployment/switchbot-home-backend backend=registry.local:5000/switchbot-home-backend:${{ github.sha }} -n switchbot-home
+          sed "s#switchbot-home-backend:local#registry.local:5000/switchbot-home-backend:${{ github.sha }}#" deploy/k3s/30-deployment.yaml | kubectl apply -f -
           kubectl rollout status deployment/switchbot-home-backend -n switchbot-home --timeout=120s
