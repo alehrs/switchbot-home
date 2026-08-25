@@ -243,11 +243,21 @@ used for this, which turned out not to hold on this specific host. Fix
 (Debian/Ubuntu; needs root, so — same as the containerd-import root
 requirement in §8 — this is done manually by the maintainer, not by
 automation): `sudo apt-get install -y bluez && sudo systemctl enable
---now bluetooth`. Once that's done, whether a real SwitchBot
-advertisement then reaches the scanner from inside the container remains
-the one still-open question — this can only be confirmed on the homelab
-itself, not from this environment, and not until BlueZ is actually
-running there.
+--now bluetooth`.
+
+**With BlueZ installed, the software stack is now fully verified end to
+end**: the pod's logs show `BLE scan started` with no error (the earlier
+`org.bluez` error is gone), and `bluetoothctl show` confirms the adapter
+is `Powered: yes` on the host. What's left is purely environmental, not a
+bug: a raw 12-second `bluetoothctl scan on` on the host found **zero**
+BLE devices of *any* kind, not just no SwitchBot sensor — meaning nothing
+is currently broadcasting within range of the homelab's adapter at all.
+The scanning pipeline (D-Bus socket → BlueZ → `btleplug` → the backend's
+parser) has nothing left to blame; this is a physical range/placement
+question (is a SwitchBot sensor, or a phone, or anything else BLE, ever
+near wherever this homelab box physically sits?) that can only be settled
+by bringing a sensor within range of it, not by anything checkable from
+software.
 
 The original "secondary unknown" about needing a system `libdbus` package
 turned out to be **wrong, and is now corrected from a real build
