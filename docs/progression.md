@@ -708,3 +708,70 @@ Entry format:
   separately, physically bring a Meter Plus within range of the homelab's
   Bluetooth adapter for a sustained period to get continuous history (the
   range question is still open and isn't something software can fix).
+
+## 2026-08-25 — Real bug found and fixed: readings-history requests silently double-encoded
+- User reported the day chart still showed "No data for this day" after
+  the previous entry's fixes, on the real homelab-connected app. Manual
+  `curl` replication of the exact same query (device ID, day range)
+  against the live backend kept succeeding, which didn't match — a sign
+  the bug was client-side, in exactly what the app itself sent, not
+  reasoning about the request.
+- **Investigation approach**: rather than keep guessing from macOS's
+  opaque CFNetwork network-summary logs (which show byte counts/status
+  but not the actual path), added a temporary `tracing::info!` line to
+  `backend/src/api/readings.rs` logging the received `device_id`/`from`/
+  `to`. Asked the user before deploying it — this meant briefly replacing
+  the live homelab backend's running image with a debug build — user
+  approved. Built the debug image by rsyncing the local source to the
+  homelab and building there (`docker build` against
+  `deploy/docker/Dockerfile`), rather than pushing to the repo/triggering
+  real CI/CD for a throwaway diagnostic. Watched the live pod logs
+  (`kubectl logs -f`) while the app's own background polling
+  (`PollingService.runSlowCycle`, which independently fetches each
+  device's trailing-1h history for the trend indicator — a second,
+  automatic caller of the same endpoint the day-chart uses) made its next
+  request.
+- **Root cause found**: the request logged as
+  `device_id=hci0%2Fdev_D2_2E_81_06_5C_61` — still percent-encoded after
+  axum's `Path` extractor (which decodes once), meaning the wire value was
+  double-encoded (`%252F`). `APIClient.urlComponents(path:)` was building
+  the path string with the device ID already percent-encoded (via the
+  `a7a870f` fix's `pathEncoded`), then assigning it to
+  `URLComponents.path`. Confirmed via a minimal standalone Swift repro:
+  `URLComponents.path`'s setter treats its input as the *decoded* logical
+  value and re-encodes it — `%2F` becomes `%252F`. `curl`/manually-typed
+  URLs never go through this code path, which is why every manual
+  replication kept succeeding while the real app kept failing. This bug
+  has been present since `a7a870f` — every readings-history request the
+  app has ever made for a slash-containing (Linux-style) device ID has
+  silently returned zero rows (200 OK, not 404) since that fix landed.
+  The original `pathEncoded` unit tests (in `a7a870f`) only tested that
+  helper in isolation and couldn't have caught this — the bug is one step
+  further down, in how its output gets used.
+- **Fix**: `APIClient.swift` — changed `components.path = path` to
+  `components.percentEncodedPath = path` (which takes its input as
+  already-encoded and uses it verbatim). Widened `urlComponents(path:)`
+  from `private` to internal (still not `public`) so
+  `APIClientTests.swift` can exercise it directly via `@testable import`.
+  Added `testFetchReadingsURLDoesNotDoubleEncodeADeviceIDSlash`, which
+  builds the actual production URL for a slash-containing device ID and
+  asserts the encoded path survives unchanged — a test on the real
+  fetchReadings-URL-construction path, not just `pathEncoded` alone,
+  so this exact regression can't reappear silently again.
+- Verified: `swift` repro script confirmed the `.path` vs
+  `.percentEncodedPath` behavior directly (not just reasoned about) before
+  writing the fix. `xcodebuild build`/`test` clean, 50 tests passing (1
+  new). Rebuilt Release, reinstalled to `/Applications/SwitchBotHome.app`,
+  relaunched.
+- **Homelab cleanup**: restored the deployment to the exact image tag it
+  ran before the debug swap
+  (`registry.local:5000/switchbot-home-backend:2ba10eeaf970822ba3fadc4c14407cd12e14bfee`,
+  confirmed via `kubectl rollout status`), deleted the local `debug-readings`
+  image tag and the `/tmp/switchbot-debug-src` rsync copy on the homelab
+  node, and reverted the temporary `tracing::info!` line from
+  `backend/src/api/readings.rs` — none of the diagnostic scaffolding was
+  kept. No commit or push made.
+- Next: user to confirm the day chart now shows the device's reading(s).
+  This also transitively fixes `PollingService`'s trend indicator for
+  this device (it was silently getting "insufficient data" for the same
+  reason), so that's worth a glance too.

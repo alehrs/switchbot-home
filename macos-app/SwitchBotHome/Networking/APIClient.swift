@@ -75,11 +75,19 @@ struct APIClient {
         return deviceID.addingPercentEncoding(withAllowedCharacters: allowedInASegment) ?? deviceID
     }
 
-    private func urlComponents(path: String) throws -> URLComponents {
+    /// `path` arrives already percent-encoded where it matters (the `/`
+    /// inside a Linux-style device ID via `pathEncoded` above). Assigning
+    /// to `.path` would re-encode it — `.path`'s setter treats its input
+    /// as the *decoded* logical value and escapes it again, turning our
+    /// `%2F` into `%252F` (confirmed against a real double-encoded 200-
+    /// with-zero-rows response from the live backend, not just reasoned
+    /// about). `.percentEncodedPath` takes the string as already-encoded
+    /// and uses it verbatim.
+    func urlComponents(path: String) throws -> URLComponents {
         guard var components = URLComponents(string: settings.apiBaseURL) else {
             throw APIError.invalidBaseURL(settings.apiBaseURL)
         }
-        components.path = path
+        components.percentEncodedPath = path
         return components
     }
 
