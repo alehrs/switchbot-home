@@ -659,3 +659,52 @@ Entry format:
   having correct.
 - No commit made — consistent with the project's standing practice of
   only committing when the user explicitly asks.
+
+## 2026-08-25 — Diagnosed "no history data" on the real homelab deploy
+- User reported: after deploying the backend to the homelab (k3s), the
+  macOS app shows a device with a live realtime value, but its day-chart
+  history appears empty.
+- SSH'd into the homelab (`multivac` alias per `~/.zshrc`) to check live
+  state directly rather than guess. `kubectl` needs `KUBECONFIG=/home/
+  multivac/.kube/config` (the default `/etc/rancher/k3s/k3s.yaml` is
+  root-only — same fact already recorded for CI in the 2026-08-25
+  KUBECONFIG entry above). Pod running, config has no
+  `READING_INTERVAL_SECONDS`/`RETENTION_DAYS` set (both commented out, so
+  no throttling/pruning in play).
+  - `GET /devices` → exactly one device,
+    `hci0/dev_D2_2E_81_06_5C_61` (confirms the Linux-style slash-in-ID
+    case the `a7a870f` percent-encoding fix targets).
+  - `GET /readings/latest` → one reading, `id: 1`, `recorded_at:
+    2026-08-25T14:14:11Z`.
+  - `GET /devices/{id}/readings?from=...&to=...` with the id properly
+    percent-encoded (`%2F`) → correctly returns that same single reading;
+    the same request with a literal unencoded `/` correctly 404s. **The
+    `a7a870f` fix itself is confirmed working end-to-end against the real
+    homelab** — that's not the bug here.
+  - Root cause of the sparse data: only **one** reading has ever been
+    stored, ~35 minutes before checking, and none since — consistent with
+    the range issue already flagged in the 2026-08-25 BLE findings entries
+    above (bluez works, but nothing was reliably in range of the
+    homelab's adapter). Not a new bug, just the same open item showing up
+    in the app now that there's a live deployment to look at.
+  - **Found and fixed a real, currently-reachable UI bug on top of
+    that**: `DeviceDetailView.metricChart` only drew a `LineMark` per
+    reading — a line needs two points to render a visible segment, so a
+    day with exactly one reading (exactly this device's situation)
+    rendered a completely blank chart, indistinguishable from the
+    explicit "No data for this day" empty state one row above it in the
+    same view, even though real data was being fetched. Fixed by adding a
+    `PointMark` alongside the `LineMark` for every reading (not just the
+    hover-selected one) — makes single/sparse-data days visible as dots,
+    and gives every other day per-sample dots on the line too as a
+    side benefit.
+  - Verified: `xcodebuild build`/`test` clean (49 tests, no new test
+    added — this is Chart rendering, not testable pure logic, consistent
+    with the project's established split), rebuilt Release and reinstalled
+    to `/Applications/SwitchBotHome.app` (relaunched, replacing the build
+    from the icon work earlier today) so the user can check the real
+    device's history against the live homelab backend.
+- Next: user to confirm the single point now shows in the day chart, and
+  separately, physically bring a Meter Plus within range of the homelab's
+  Bluetooth adapter for a sustained period to get continuous history (the
+  range question is still open and isn't something software can fix).

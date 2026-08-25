@@ -166,6 +166,17 @@ struct DeviceDetailView: View {
                         y: .value(title, reading[keyPath: keyPath])
                     )
                     .foregroundStyle(color)
+                    // `LineMark` alone draws nothing for a single-reading
+                    // day (a line needs two points to connect) — a device
+                    // just seen once looks identical to "no data" without
+                    // this. Also gives every other day a visible dot per
+                    // sample, not just a bare line.
+                    PointMark(
+                        x: .value("Time", reading.recordedAt),
+                        y: .value(title, reading[keyPath: keyPath])
+                    )
+                    .foregroundStyle(color)
+                    .symbolSize(20)
                 }
 
                 if let selectedReading {
