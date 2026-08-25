@@ -224,11 +224,30 @@ node, not real BLE hardware):
 - `GET /devices` returned `[]` correctly against an in-memory database
   inside the container — the HTTP/SQLite stack works in this environment.
 
-**What's still unverified**: an actual k3s pod, on real cluster hardware,
-with the D-Bus socket actually mounted and a real Bluetooth adapter
-reachable — i.e., whether a SwitchBot advertisement genuinely reaches the
-scanner from inside the container the way it does on bare metal. That can
-only be confirmed on the homelab itself, not from this environment.
+**Now actually deployed to the real k3s node, and this surfaced a new,
+more fundamental gap than the D-Bus socket path.** The pod runs, the
+D-Bus socket mounts correctly (no more "No such file or directory"), and
+the HTTP API is reachable at the node's IP (`GET /devices` → `[]`, as
+expected with no data yet) — but the BLE scanner itself failed with `The
+name org.bluez was not provided by any .service files`. Investigated
+directly on the host (not from inside the container): the Bluetooth
+*hardware* is genuinely present and kernel-recognized (`lsusb` shows an
+IMC Networks Bluetooth Radio, `/sys/class/bluetooth/hci0` exists) — but
+**`bluez` (the userspace daemon that owns `org.bluez` on the system D-Bus
+bus) isn't installed on the host at all** (`dpkg -l | grep bluez` returns
+nothing, `systemctl status bluetooth` → "could not be found"). The
+container's design (talk to the *host's* BlueZ over the mounted D-Bus
+socket, rather than running its own contained `bluetoothd`) was correct
+all along — it just assumed BlueZ was already running on any k3s node
+used for this, which turned out not to hold on this specific host. Fix
+(Debian/Ubuntu; needs root, so — same as the containerd-import root
+requirement in §8 — this is done manually by the maintainer, not by
+automation): `sudo apt-get install -y bluez && sudo systemctl enable
+--now bluetooth`. Once that's done, whether a real SwitchBot
+advertisement then reaches the scanner from inside the container remains
+the one still-open question — this can only be confirmed on the homelab
+itself, not from this environment, and not until BlueZ is actually
+running there.
 
 The original "secondary unknown" about needing a system `libdbus` package
 turned out to be **wrong, and is now corrected from a real build
