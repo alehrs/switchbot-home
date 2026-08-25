@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="switchbot-home logo" width="160">
+</p>
+
 # switchbot-home
 
 Temperature/humidity monitoring for SwitchBot Meter Plus BLE sensors. A

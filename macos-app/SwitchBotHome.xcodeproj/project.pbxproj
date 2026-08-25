@@ -12,6 +12,7 @@
 		19EB0EC05593693076BBAC0E /* DeviceNumbering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3D79C4117F5D684E38E959 /* DeviceNumbering.swift */; };
 		1C3E5DB74FE02CA61EC6EF09 /* ChartDomain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F5D29C1D1D035C9BCD64B1B /* ChartDomain.swift */; };
 		1F86384ED5653907459D2B13 /* GroupingRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4415FA7F6657ACFBF0E114E2 /* GroupingRules.swift */; };
+		207E19610F215B8F9385EC97 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BCC3EC7AF7B045169F8FBDAF /* Assets.xcassets */; };
 		2F8DDC08CAE6B19F08200419 /* DayRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8B3D29B21719B9E558A988 /* DayRangeTests.swift */; };
 		38F38F2E06EE8A9E9AC58330 /* ReadingsDownsampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEF9442260CFDBEAD537824 /* ReadingsDownsampler.swift */; };
 		3F43BA0D3CFE4552E9D2F9A1 /* RoomSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06CADAAC106573B18F209F0 /* RoomSectionView.swift */; };
@@ -84,6 +85,7 @@
 		ACEF9442260CFDBEAD537824 /* ReadingsDownsampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingsDownsampler.swift; sourceTree = "<group>"; };
 		ADFD61F5C1DE8A15791AE64A /* ModelDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
 		BB42E6AFFDE66B8A4393A0A3 /* AppStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreTests.swift; sourceTree = "<group>"; };
+		BCC3EC7AF7B045169F8FBDAF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineBannerView.swift; sourceTree = "<group>"; };
 		C93F4A68630E6E73428B2C79 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D29A5AC1AF5D341DAD13CB85 /* MenuBarLabelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabelView.swift; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 		3C0E6E3C9DDA66E729C42ACA /* SwitchBotHome */ = {
 			isa = PBXGroup;
 			children = (
+				BCC3EC7AF7B045169F8FBDAF /* Assets.xcassets */,
 				C93F4A68630E6E73428B2C79 /* Info.plist */,
 				90DE080D647AB009F527795B /* SwitchBotHome.entitlements */,
 				EFB4810D558ED0CC9B716246 /* SwitchBotHomeApp.swift */,
@@ -243,6 +246,7 @@
 			buildConfigurationList = 7DA265C46D15E43DA9745FC8 /* Build configuration list for PBXNativeTarget "SwitchBotHome" */;
 			buildPhases = (
 				B1685A092357A91BE9AC29E7 /* Sources */,
+				1503A1088609D47C79570041 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -285,6 +289,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1503A1088609D47C79570041 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				207E19610F215B8F9385EC97 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		366DEBD5F4360A2D87ABF05A /* Sources */ = {

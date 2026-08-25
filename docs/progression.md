@@ -611,3 +611,51 @@ Entry format:
   leaving the original guesses in place now that better evidence exists.
 - No commit or push made — the user has never asked for one at any point
   in this project, and nothing changed that expectation here either.
+
+## 2026-08-25 — Project logo (README + macOS app icon)
+- User added `logo.png` (1254x1254) to the repo root and asked for it to
+  become the project logo, used in the README and as the macOS app icon.
+- **Found and fixed a real defect in the source file before using it**:
+  `logo.png` was RGB with no alpha channel (`sips -g hasAlpha` → `no`) —
+  it's an app-icon-style render (rounded squircle, glow effects) sitting
+  on an *opaque black* canvas rather than a transparent one. Used as-is,
+  it would show a black square around the icon in the README (against
+  GitHub's white background) and a black-cornered square in the Dock/
+  Finder (macOS does not auto-mask flat PNG-based `AppIcon.appiconset`
+  images — whatever's in the corners renders as-is).
+  - Fixed by un-premultiplying the image against black: for each pixel,
+    `alpha = max(R, G, B)`, then `color = color * 255 / alpha` — the
+    standard technique for recovering alpha from a glow-style render
+    that was composited onto pure black. A naive version amplified
+    faint pixel-level noise in the near-black corners into visible
+    colored speckle (dividing by a very small alpha blows up any noise
+    at that pixel); fixed with a smoothstep noise gate (alpha forced to
+    0 below a luminance threshold, eased ramp above it) before the
+    unpremultiply. Verified visually (viewed the output) before using it
+    anywhere — clean transparent corners, glow preserved, no speckle, no
+    black fringe. Required installing `pillow`/`numpy` via `pip3
+    --user` (not present on this machine); no other dependency changes.
+  - Replaced the root `logo.png` with this fixed (alpha-corrected, same
+    1254x1254, same visual design) version rather than keeping the
+    original alongside it — this file *is* "the logo" per the ask, and
+    the original would only be a footgun (correct-looking until embedded
+    somewhere with a non-black background).
+- README: added a centered `<img src="logo.png" width="160">` above the
+  title.
+- macOS app icon: generated a full 10-image `AppIcon.appiconset`
+  (16/32/128/256/512, @1x and @2x, `idiom: mac`) from the fixed PNG via
+  `sips -z` (confirmed `sips` preserves the alpha channel through
+  resize), under the new `macos-app/SwitchBotHome/Assets.xcassets/`.
+  Wired it in via `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` in
+  `macos-app/Project.yml` (xcodegen picks up `.xcassets` folders under
+  `sources` automatically — no separate resources entry needed).
+  Regenerated the Xcode project (`xcodegen generate`) and validated for
+  real: `xcodebuild build` succeeded and the built `.app`'s
+  `Contents/Resources/AppIcon.icns` exists with `Info.plist`'s
+  `CFBundleIconName` set to `AppIcon`; `xcodebuild test` still passes all
+  49 tests. Note: the app is `LSUIElement` (menu-bar-only, no Dock icon
+  in normal use), so this icon is mainly visible in Finder/About/
+  Spotlight/the Xcode run-destination picker, not the Dock — still worth
+  having correct.
+- No commit made — consistent with the project's standing practice of
+  only committing when the user explicitly asks.
