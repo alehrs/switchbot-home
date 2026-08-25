@@ -244,18 +244,34 @@ push-to-deploy automation, not something "anyone with repo access" gets.
   GitHub to pick up jobs — no inbound port needs to be opened on the home
   network, unlike a GitHub-hosted runner trying to reach in.
 - Because the runner lives on the homelab already, it has direct
-  `docker`/`kubectl` access to the local k3s cluster — **no container
-  registry, no stored credentials/secrets needed** for this pipeline at
-  all. It builds and imports the image locally, the same way the manual
-  k3s install path does (§4.6).
+  `docker`/`kubectl` access to the local k3s cluster. **This does push
+  through the homelab's existing local registry (`registry.local:5000`),
+  not a direct containerd import** — corrected from the original design
+  here after actually setting this up: `docker save ... | sudo k3s ctr
+  images import -` (what the manual k3s install path in §4.6 still uses)
+  needs root, and the runner's own user has no passwordless sudo on this
+  host, confirmed by testing both a plain and a scoped `sudo -n` and
+  getting `permission denied` on `/run/k3s/containerd/containerd.sock` for
+  both. `registry.local:5000` is the homelab's own established pattern
+  for this — other repos' pipelines already push there, Docker credentials
+  for it were already configured on the runner's host account, and a
+  registry push needs no root at all. So this pipeline needs one small
+  stored-credential dependency after all (the runner's already-configured
+  Docker login for `registry.local:5000`), just not a GitHub-side secret —
+  it's the same host-level credential every other homelab pipeline reuses.
 - `.github/workflows/deploy-backend.yml`:
   - Trigger: `on: push: branches: [main]`, path-filtered to `backend/**`
     and `deploy/**` so unrelated commits (docs, the macOS app) don't
     trigger a redeploy.
   - `runs-on: [self-hosted, homelab]`.
-  - Steps: checkout → `docker build` (tag both `:${{ github.sha }}` and
-    `:latest`) → `docker save ... | sudo k3s ctr images import -` →
-    `kubectl set image deployment/switchbot-home-backend backend=switchbot-home-backend:${{ github.sha }}`
+  - Steps: checkout → `docker build` (tag both
+    `registry.local:5000/switchbot-home-backend:${{ github.sha }}` and
+    `:latest`) → `docker push` both tags → `kubectl apply -f deploy/k3s/`
+    (establishes the base manifest state; its Deployment still defaults to
+    the generic `switchbot-home-backend:local` image, unrelated to this
+    registry-tagged one) → `kubectl set image
+    deployment/switchbot-home-backend
+    backend=registry.local:5000/switchbot-home-backend:${{ github.sha }}`
     → `kubectl rollout status deployment/switchbot-home-backend` (fails
     the workflow if the rollout doesn't succeed, instead of silently
     leaving a broken deployment).
