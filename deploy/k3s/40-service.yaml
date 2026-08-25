@@ -4,11 +4,11 @@ metadata:
   name: switchbot-home-backend
   namespace: switchbot-home
 spec:
-  # With hostNetwork on the pod, the node's IP:3000 already reaches it
+  # With hostNetwork on the pod, the node's IP:8090 already reaches it
   # directly — this Service is for in-cluster DNS convenience, not
   # strictly required for reachability.
   selector:
     app: switchbot-home-backend
   ports:
-    - port: 3000
-      targetPort: 3000
+    - port: 8090
+      targetPort: 8090

@@ -19,8 +19,10 @@ spec:
     spec:
       # BLE/HCI access doesn't work meaningfully through a network-
       # namespaced container — see docs/specs/installation-and-deployment.md §7.
-      # This also means BIND_ADDRESS:3000 binds directly on the node, so
-      # make sure nothing else on that node already uses port 3000.
+      # This also means BIND_ADDRESS's port binds directly on the node
+      # (see 10-configmap.yaml for the default, chosen to avoid a real
+      # collision with Grafana on this node) — make sure nothing else on
+      # your node already uses whichever port you configure.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:

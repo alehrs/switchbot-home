@@ -178,7 +178,14 @@ artifact**, so editing env vars never means rebuilding:
   ConfigMap changes isn't worth the extra moving part at this scale.
 
 Same four backend env vars either way (`DATABASE_URL`, `BIND_ADDRESS`,
-`READING_INTERVAL_SECONDS`, `RETENTION_DAYS` — see `README.md`).
+`READING_INTERVAL_SECONDS`, `RETENTION_DAYS` — see `README.md`). One
+difference worth noting: the k3s ConfigMap's `BIND_ADDRESS` defaults to
+`0.0.0.0:8090`, not `:3000` like the systemd env file — because
+`hostNetwork: true` (§7) binds it directly on the node, and `:3000` is
+already Grafana's port on the maintainer's own homelab node (confirmed by
+`ss -tln` before the first real deploy). If your own k3s node already
+uses `:8090` for something else, change it in the ConfigMap before
+applying.
 
 ## 7. BLE from inside a container — the real risk in this design
 

@@ -5,7 +5,10 @@ metadata:
   namespace: switchbot-home
 data:
   DATABASE_URL: "sqlite:///data/switchbot-home.sqlite"
-  BIND_ADDRESS: "0.0.0.0:3000"
+  # Not :3000 — with hostNetwork this binds directly on the node, and on
+  # the maintainer's own homelab node :3000 is already taken by Grafana
+  # (confirmed via `ss -tln` before the first real deploy, not guessed).
+  BIND_ADDRESS: "0.0.0.0:8090"
   # Uncomment to enable (see README.md for what they do), then:
   #   kubectl apply -f deploy/k3s/configmap.yaml
   #   kubectl rollout restart deployment/switchbot-home-backend -n switchbot-home
