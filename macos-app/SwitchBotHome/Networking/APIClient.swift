@@ -50,7 +50,7 @@ struct APIClient {
     }
 
     func fetchReadings(deviceID: String, from: Date, to: Date) async throws -> [Reading] {
-        var components = try urlComponents(path: "/devices/\(deviceID)/readings")
+        var components = try urlComponents(path: "/devices/\(Self.pathEncoded(deviceID))/readings")
         let formatter = ISO8601DateFormatter()
         components.queryItems = [
             URLQueryItem(name: "from", value: formatter.string(from: from)),
@@ -63,6 +63,17 @@ struct APIClient {
     }
 
     // MARK: - Plumbing
+
+    /// `device_id` is opaque and, on Linux, btleplug formats it as
+    /// `hci0/dev_XX_XX_XX_XX_XX_XX` — a literal `/`. Left un-encoded,
+    /// that turns one path segment into two and the server 404s (its
+    /// route has a fixed segment count). `.urlPathAllowed` alone doesn't
+    /// help here since `/` is itself a legal *path* character; this
+    /// segment needs it encoded, not treated as a separator.
+    static func pathEncoded(_ deviceID: String) -> String {
+        let allowedInASegment = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        return deviceID.addingPercentEncoding(withAllowedCharacters: allowedInASegment) ?? deviceID
+    }
 
     private func urlComponents(path: String) throws -> URLComponents {
         guard var components = URLComponents(string: settings.apiBaseURL) else {
