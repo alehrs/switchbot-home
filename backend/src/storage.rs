@@ -45,17 +45,25 @@ impl SqliteStorage {
     /// Records that a device broadcast an advertisement, creating it on
     /// first sighting. Returns `None` if the device is blacklisted, since
     /// callers should skip storing a reading for it in that case.
+    ///
+    /// `mac_address` is best-effort and platform-dependent (real on BlueZ,
+    /// unavailable on macOS/CoreBluetooth — see `docs/specs/architecture.md`
+    /// §3). A `None` here never clears a previously recorded address.
     pub async fn upsert_device_seen(
         &self,
         device_id: &str,
+        mac_address: Option<&str>,
         seen_at: DateTime<Utc>,
     ) -> Result<Option<Device>, StorageError> {
         sqlx::query(
-            "INSERT INTO devices (device_id, first_seen_at, last_seen_at)
-             VALUES (?, ?, ?)
-             ON CONFLICT (device_id) DO UPDATE SET last_seen_at = excluded.last_seen_at",
+            "INSERT INTO devices (device_id, mac_address, first_seen_at, last_seen_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (device_id) DO UPDATE SET
+                 last_seen_at = excluded.last_seen_at,
+                 mac_address = COALESCE(excluded.mac_address, devices.mac_address)",
         )
         .bind(device_id)
+        .bind(mac_address)
         .bind(seen_at)
         .bind(seen_at)
         .execute(&self.pool)
@@ -219,7 +227,7 @@ mod tests {
         let storage = test_storage().await;
         let now = Utc::now();
 
-        let device = storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        let device = storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
 
         let device = device.expect("newly seen device should not be blacklisted");
         assert_eq!(device.device_id, "AA:BB");
@@ -232,7 +240,7 @@ mod tests {
         let storage = test_storage().await;
         let first_seen = Utc::now();
         storage
-            .upsert_device_seen("AA:BB", first_seen)
+            .upsert_device_seen("AA:BB", None, first_seen)
             .await
             .unwrap();
         storage
@@ -242,7 +250,7 @@ mod tests {
 
         let later = first_seen + Duration::seconds(30);
         let device = storage
-            .upsert_device_seen("AA:BB", later)
+            .upsert_device_seen("AA:BB", None, later)
             .await
             .unwrap()
             .unwrap();
@@ -252,10 +260,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upserting_records_the_mac_address_and_keeps_it_on_later_sightings_without_one() {
+        let storage = test_storage().await;
+        let first_seen = Utc::now();
+
+        let device = storage
+            .upsert_device_seen("AA:BB", Some("D2:2E:81:06:5C:61"), first_seen)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(device.mac_address.as_deref(), Some("D2:2E:81:06:5C:61"));
+
+        let later = first_seen + Duration::seconds(30);
+        let device = storage
+            .upsert_device_seen("AA:BB", None, later)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(device.mac_address.as_deref(), Some("D2:2E:81:06:5C:61"));
+    }
+
+    #[tokio::test]
     async fn clearing_a_label_sets_it_to_null_without_touching_room() {
         let storage = test_storage().await;
         storage
-            .upsert_device_seen("AA:BB", Utc::now())
+            .upsert_device_seen("AA:BB", None, Utc::now())
             .await
             .unwrap();
         storage
@@ -282,13 +312,13 @@ mod tests {
     async fn upserting_a_blacklisted_device_returns_none() {
         let storage = test_storage().await;
         let now = Utc::now();
-        storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
         storage
             .set_device_label("AA:BB", None, None, Some(true))
             .await
             .unwrap();
 
-        let result = storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        let result = storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
 
         assert!(result.is_none());
     }
@@ -309,7 +339,7 @@ mod tests {
     async fn readings_round_trip_and_filter_by_range() {
         let storage = test_storage().await;
         let now = Utc::now();
-        storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
 
         let reading = NewReading {
             device_id: "AA:BB".to_string(),
@@ -350,8 +380,8 @@ mod tests {
     async fn latest_readings_all_excludes_blacklisted_devices() {
         let storage = test_storage().await;
         let now = Utc::now();
-        storage.upsert_device_seen("AA:BB", now).await.unwrap();
-        storage.upsert_device_seen("CC:DD", now).await.unwrap();
+        storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
+        storage.upsert_device_seen("CC:DD", None, now).await.unwrap();
         storage
             .set_device_label("CC:DD", None, None, Some(true))
             .await
@@ -380,7 +410,7 @@ mod tests {
     async fn delete_readings_before_removes_only_older_rows() {
         let storage = test_storage().await;
         let now = Utc::now();
-        storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
 
         for age_days in [10, 5, 1] {
             storage

@@ -775,3 +775,55 @@ Entry format:
   This also transitively fixes `PollingService`'s trend indicator for
   this device (it was silently getting "insufficient data" for the same
   reason), so that's worth a glance too.
+
+## 2026-08-26 — Added `devices.mac_address` as a separate, best-effort column
+- User asked why the DB didn't store the device's MAC address, then asked
+  to add it as its own field. Investigated whether the SwitchBot BLE
+  advertisement payload itself carries the MAC: it doesn't — the 6-byte
+  meter service-data layout (`backend/src/ble/switchbot.rs`) is fully
+  accounted for by device type/battery/temperature/humidity, no address
+  bytes. The MAC instead comes from the BLE link layer, exposed by
+  `btleplug` via `Peripheral::properties().address` (a `BDAddr`), separate
+  from the `PeripheralId` already used as `device_id`.
+- Checked `btleplug` 0.12's platform backends directly
+  (`~/.cargo/registry/.../btleplug-0.12.0/src/{bluez,corebluetooth}/peripheral.rs`)
+  to confirm behavior rather than assuming: on **BlueZ/Linux** (the actual
+  homelab deployment platform), `properties().address` is the real
+  hardware MAC. On **macOS/CoreBluetooth**, it is unconditionally
+  `BDAddr::default()` (`00:00:00:00:00:00`) — not a per-device stand-in,
+  literally the same all-zero value for every peripheral — confirming and
+  sharpening the platform caveat already recorded in
+  `docs/specs/architecture.md` §3.
+- **Schema**: added migration `0002_add_mac_address.sql`
+  (`ALTER TABLE devices ADD COLUMN mac_address TEXT`, nullable). Added
+  `mac_address: Option<String>` to `domain::Device`.
+- **Storage**: `SqliteStorage::upsert_device_seen` now takes
+  `mac_address: Option<&str>`. The upsert's `ON CONFLICT` clause uses
+  `COALESCE(excluded.mac_address, devices.mac_address)` so a later
+  sighting with `None` (e.g. a cache-hit skip, see below) never clobbers
+  a previously recorded address.
+- **Collector**: `ble/scanner.rs` adds `fetch_mac_address(&adapter, &id)`,
+  which calls `adapter.peripheral(id)` → `.properties()` and returns
+  `None` whenever the address equals `BDAddr::default()` — so macOS dev
+  runs correctly keep storing `NULL` instead of a fake, identical, useless
+  value. Only looked up once per device per process lifetime (skipped
+  when `device_id` is already a key in the in-memory `last_stored`
+  throttle map) since the address can't change and a peripheral property
+  lookup is unnecessary overhead on every throttle-surviving reading
+  otherwise.
+- Updated `docs/specs/architecture.md` §3 with a new bullet documenting
+  this column and why `device_id` (not `mac_address`) remains the primary
+  key/identity.
+- Verified: `cargo build -p backend` and `cargo clippy -p backend
+  --all-targets` both clean; `cargo test -p backend` 26/26 passing,
+  including a new
+  `upserting_records_the_mac_address_and_keeps_it_on_later_sightings_without_one`
+  storage test. No hardware-dependent behavior could be exercised locally
+  (needs a real BlueZ adapter on the homelab to confirm a real MAC gets
+  captured end-to-end) — that's a live-deployment follow-up, not
+  something unit tests can cover.
+- Next: user to redeploy the backend to the homelab and confirm
+  `GET /devices` now returns non-null `mac_address` values for devices
+  seen after the deploy (pre-existing devices keep `NULL` until their
+  next sighting, since the column only fills in going forward).
+

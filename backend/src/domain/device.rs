@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Device {
     pub device_id: String,
+    pub mac_address: Option<String>,
     pub label: Option<String>,
     pub room: Option<String>,
     pub blacklisted: bool,

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use btleplug::api::{Central, CentralEvent, Manager as _, ScanFilter};
-use btleplug::platform::Manager;
+use btleplug::api::{BDAddr, Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
+use btleplug::platform::{Adapter, Manager, PeripheralId};
 use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use tracing::{debug, info, warn};
@@ -49,6 +49,13 @@ pub async fn run(
     // throttle — defeating half the point of throttling in the first
     // place.
     let mut last_stored: HashMap<String, DateTime<Utc>> = HashMap::new();
+    // Devices for which a real MAC has already been fetched this process
+    // lifetime — separate from `last_stored` so a failed/placeholder
+    // lookup (e.g. a transient BlueZ D-Bus error, or macOS/CoreBluetooth's
+    // permanent placeholder) gets retried on the device's next
+    // throttle-surviving reading instead of being silently forgone for
+    // good.
+    let mut mac_known: HashSet<String> = HashSet::new();
 
     let mut events = adapter.events().await?;
     while let Some(event) = events.next().await {
@@ -73,7 +80,20 @@ pub async fn run(
                 continue;
             }
 
-            store_reading(&storage, &device_id, parsed).await;
+            // Skip the lookup once a real MAC is already known for this
+            // device — it doesn't change, and a property lookup is
+            // unnecessary overhead on every throttle-surviving reading
+            // otherwise.
+            let mac_address = if mac_known.contains(&device_id) {
+                None
+            } else {
+                fetch_mac_address(&adapter, &id).await
+            };
+            if mac_address.is_some() {
+                mac_known.insert(device_id.clone());
+            }
+
+            store_reading(&storage, &device_id, mac_address.as_deref(), parsed).await;
             last_stored.insert(device_id, Utc::now());
         }
     }
@@ -95,9 +115,28 @@ fn is_throttled(
     }
 }
 
-async fn store_reading(storage: &SqliteStorage, device_id: &str, parsed: switchbot::ParsedReading) {
+/// Looks up the real BLE MAC via the adapter's peripheral properties.
+/// Returns `None` on BlueZ if the lookup fails, and always on macOS/
+/// CoreBluetooth, which never exposes the real hardware address to apps
+/// (it reports the all-zero placeholder `BDAddr::default()` instead) — see
+/// `docs/specs/architecture.md` §3.
+async fn fetch_mac_address(adapter: &Adapter, id: &PeripheralId) -> Option<String> {
+    let peripheral = adapter.peripheral(id).await.ok()?;
+    let properties = peripheral.properties().await.ok()??;
+    (properties.address != BDAddr::default()).then(|| properties.address.to_string())
+}
+
+async fn store_reading(
+    storage: &SqliteStorage,
+    device_id: &str,
+    mac_address: Option<&str>,
+    parsed: switchbot::ParsedReading,
+) {
     let now = Utc::now();
-    let device = match storage.upsert_device_seen(device_id, now).await {
+    let device = match storage
+        .upsert_device_seen(device_id, mac_address, now)
+        .await
+    {
         Ok(device) => device,
         Err(err) => {
             warn!(device = device_id, error = %err, "failed to record device sighting");

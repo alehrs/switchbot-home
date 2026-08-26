@@ -57,7 +57,16 @@ switchbot-home/
   Linux homelab deployment. Devices will need to be re-labeled once the
   backend moves from a Mac (dev) to the homelab (Linux) host. For this
   reason the schema and API use the neutral term `device_id`, not
-  `mac_address`.
+  `mac_address`, as the primary key.
+- **`devices.mac_address` (added later, nullable)**: the collector also
+  best-effort records the real hardware MAC as a separate column, via
+  `btleplug`'s `Peripheral::properties().address`. On the BlueZ/Linux
+  homelab this is the genuine MAC. `btleplug`'s CoreBluetooth backend
+  always reports `BDAddr::default()` (all-zero) instead of a real address
+  — Apple never exposes it to apps — so the collector detects that
+  placeholder and stores `NULL` rather than a fake, identical-across-
+  devices value. This column is informational only; `device_id` remains
+  the identity/primary key for the reason above.
 
 ## 4. System Architecture
 

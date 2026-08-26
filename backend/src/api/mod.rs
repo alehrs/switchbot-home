@@ -92,7 +92,7 @@ mod tests {
     async fn labeling_a_known_device_updates_it_and_it_shows_up_in_the_listing() {
         let (app, storage) = test_app().await;
         storage
-            .upsert_device_seen("AA:BB", Utc::now())
+            .upsert_device_seen("AA:BB", None, Utc::now())
             .await
             .unwrap();
 
@@ -123,7 +123,7 @@ mod tests {
     async fn sending_an_empty_label_clears_it() {
         let (app, storage) = test_app().await;
         storage
-            .upsert_device_seen("AA:BB", Utc::now())
+            .upsert_device_seen("AA:BB", None, Utc::now())
             .await
             .unwrap();
         storage
@@ -149,7 +149,7 @@ mod tests {
     async fn latest_reading_for_a_device_with_no_readings_is_404() {
         let (app, storage) = test_app().await;
         storage
-            .upsert_device_seen("AA:BB", Utc::now())
+            .upsert_device_seen("AA:BB", None, Utc::now())
             .await
             .unwrap();
 
@@ -169,7 +169,7 @@ mod tests {
     async fn latest_readings_endpoint_returns_stored_readings() {
         let (app, storage) = test_app().await;
         let now = Utc::now();
-        storage.upsert_device_seen("AA:BB", now).await.unwrap();
+        storage.upsert_device_seen("AA:BB", None, now).await.unwrap();
         storage
             .insert_reading(&NewReading {
                 device_id: "AA:BB".to_string(),
