@@ -827,3 +827,57 @@ Entry format:
   seen after the deploy (pre-existing devices keep `NULL` until their
   next sighting, since the column only fills in going forward).
 
+## 2026-08-26 — Fixed the Settings window opening behind other apps
+- User reported that clicking "Settings…" in the menu bar popover always
+  opened the window *behind* whatever apps were already open, on
+  whichever desktop/Space they were on, and asked for it to come to the
+  front and be focused instead.
+- **Root cause**: `macos-app/SwitchBotHome/Info.plist` sets
+  `LSUIElement = true` (menu-bar-only, no Dock icon) — an "accessory"
+  activation-policy app. Such apps are never the frontmost app on their
+  own; creating/showing a new window (here, via SwiftUI's `openSettings()`
+  environment action) does not implicitly activate the app, so the window
+  appears without coming forward or gaining focus. This is a well-known
+  class of bug for `LSUIElement`/`MenuBarExtra` apps, not specific to this
+  codebase.
+- **Fix, two parts**:
+  - `Views/PopoverContentView.swift`: the "Settings…" button now calls
+    `NSApp.activate()` immediately before `openSettings()`. (Used the
+    no-argument `activate()`, not the older
+    `activate(ignoringOtherApps:)` — the latter is deprecated as of
+    macOS 14, which is this project's `MACOSX_DEPLOYMENT_TARGET`, and the
+    no-arg form already behaves as `ignoringOtherApps: true`.)
+  - `Settings/SettingsView.swift`: added a private `WindowAccessor`
+    (`NSViewRepresentable`) to reach the underlying `NSWindow` — SwiftUI's
+    `Settings` scene doesn't otherwise expose it — and on resolving it,
+    sets `collectionBehavior.insert(.moveToActiveSpace)` and calls
+    `makeKeyAndOrderFront(nil)`. `Settings` reuses one window instance for
+    the app's whole run, and by default a window stays pinned to whatever
+    Space it was first created on; `.moveToActiveSpace` makes it follow
+    the user to whichever Space is currently active on every open,
+    covering the "regardless of which desktop" half of the request.
+  - Self-caught during review: the first draft of `WindowAccessor` grabbed
+    `view.window` after a single `DispatchQueue.main.async` hop with no
+    retry. Since `makeNSView` only runs once for the window's whole
+    lifetime, losing that one race (the view not yet attached to its
+    window on that run loop turn) would have silently and permanently
+    skipped the fix for the rest of the app's run — same shape of bug as
+    the single-attempt MAC fetch caught earlier today in
+    `backend/src/ble/scanner.rs`. Changed to retry up to 5 further run
+    loop turns before giving up.
+- Verified: `xcodebuild build`/`test` clean on both Debug and Release, 50
+  tests passing (no new tests — this is AppKit window-activation/Space
+  behavior, not something the existing pure-logic test style covers).
+  Rebuilt Release, reinstalled to `/Applications/SwitchBotHome.app`,
+  relaunched. Confirmed via `osascript`/System Events that the menu bar
+  item and popover still open/close correctly post-change. Could **not**
+  fully automate a click-through of the "Settings…" button itself:
+  SwiftUI's accessibility tree for `MenuBarExtra` `.window`-style popovers
+  reports zero `button`-role children to System Events UI scripting
+  (`count of buttons of window 1` → 0), a known SwiftUI/AX limitation
+  unrelated to this fix. The activation/Space-following behavior itself
+  rests on standard, well-documented AppKit APIs for exactly this
+  `LSUIElement` scenario, but the exact interactive fix has not been
+  eyeballed by the user yet.
+- Next: user to confirm in actual use that "Settings…" now reliably
+  surfaces on top, focused, on whichever Space they're currently on.

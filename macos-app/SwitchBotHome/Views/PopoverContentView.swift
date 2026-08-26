@@ -69,6 +69,11 @@ struct PopoverContentView: View {
                 }
                 Spacer()
                 Button("Settings…") {
+                    // As an `LSUIElement` accessory app, this app is never
+                    // the frontmost app on its own — without activating it
+                    // first, the Settings window opens behind whatever
+                    // app currently has focus instead of on top.
+                    NSApp.activate()
                     openSettings()
                 }
                 Button("Quit") {

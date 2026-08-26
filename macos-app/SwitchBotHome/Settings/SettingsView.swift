@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -56,6 +57,16 @@ struct SettingsView: View {
         .onAppear {
             draftURL = settings.apiBaseURL
         }
+        // SwiftUI's `Settings` scene reuses a single window instance
+        // across opens, and by default a window stays pinned to whatever
+        // Space it was first created on. `.moveToActiveSpace` makes it
+        // follow the user to whichever Space is currently active instead,
+        // so "Settings…" always surfaces it there rather than switching
+        // (or failing to switch) the user to some other Space.
+        .background(WindowAccessor { window in
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            window.makeKeyAndOrderFront(nil)
+        })
     }
 
     @ViewBuilder
@@ -99,6 +110,39 @@ struct SettingsView: View {
             testResult = .success
         } catch {
             testResult = .failure(error.localizedDescription)
+        }
+    }
+}
+
+/// Bridges to the `NSWindow` hosting this SwiftUI view, since SwiftUI's
+/// `Settings` scene doesn't otherwise expose it for the AppKit-level
+/// adjustments in `.background(WindowAccessor { ... })` above.
+private struct WindowAccessor: NSViewRepresentable {
+    let onResolve: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        resolveWindow(for: view, attemptsRemaining: 5)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    // The view isn't attached to a window yet on this same run loop turn
+    // — defer to the next one, by which point SwiftUI has usually
+    // inserted it into the window's view hierarchy. `makeNSView` only
+    // runs once for the lifetime of the (single, reused) Settings
+    // window, so a one-shot attempt that loses this race would silently
+    // and permanently skip `onResolve` for the rest of the app's run;
+    // retrying a few more run loop turns makes that failure mode
+    // vanishingly unlikely instead.
+    private func resolveWindow(for view: NSView, attemptsRemaining: Int) {
+        DispatchQueue.main.async {
+            if let window = view.window {
+                onResolve(window)
+            } else if attemptsRemaining > 0 {
+                resolveWindow(for: view, attemptsRemaining: attemptsRemaining - 1)
+            }
         }
     }
 }
