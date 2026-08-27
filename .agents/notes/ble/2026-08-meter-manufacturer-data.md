@@ -34,6 +34,31 @@ the ordering race and is skipped; the next broadcast (~seconds) has both.
 get a consistent snapshot of both — rejected as an unnecessary per-reading async
 lookup (same reasoning that keeps the MAC lookup once-per-device).
 
+**Update 2026-08-27 — a meter can send *no* service data at all.** A meter's
+service data (device-type byte + battery) rides in its `SCAN_RSP`, sent only in
+reply to the scanner's `SCAN_REQ`. Seen from too far for that two-way exchange
+to complete, a meter delivers **only** its `ADV_IND` — manufacturer data, no
+service data — so the pairing scheme above never fires (no
+`ServiceDataAdvertisement` event). Confirmed with `btmon` on the homelab: three
+Meter Plus units, all only ever `ADV_IND` / `Company 2409`, never `Service Data
+FD3D`, over minutes. This is why the k3s deploy stored ~nothing while the Mac
+(near the device, completes the `SCAN_REQ`) worked.
+
+Fix: `parse_meter_manufacturer_data(mfr)` decodes temp/humidity from bytes 8..11
+alone (battery stays `None` — `ParsedReading.battery` became `Option<i64>`). The
+scanner now runs its throttle/store tail on *either* event type. Guards:
+- no device-type byte in manufacturer data → reject any payload outside
+  −40..=80 °C / 0..=100 % (and the all-zero boot payload). Weak, but the only
+  signal available; fine here because the setup is Meter Plus only.
+- `service_reading_seen: HashMap<device_id, Instant>` — a device that *did*
+  produce a service-data reading suppresses its manufacturer-only path for
+  `SERVICE_DATA_PREFERENCE_SECS` (1 h), so a meter that sends both keeps the
+  richer (battery-bearing) reading and isn't double-stored.
+
+Operational: with `READING_INTERVAL_SECONDS` unset, every `ADV_IND` (~seconds)
+is now stored — set it in the configmap. Root cause is still range; a better
+dongle + USB extension recovers the `SCAN_RSP` (and battery).
+
 **Gotcha.** The first 6 bytes of a SwitchBot meter's manufacturer data are its
 real MAC in natural order (MSB first). CoreBluetooth does **not** mask this the
 way it masks the link-layer address (`properties().address` is all-zero on

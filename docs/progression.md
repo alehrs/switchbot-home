@@ -932,3 +932,60 @@ Entry format:
 - Updated `docs/specs/architecture.md` §3.
 - Next: user to run the backend against the real Outdoor Meter and confirm
   readings + a non-null `mac_address` (even on the Mac).
+
+## 2026-08-27 — Homelab collector: read meters from manufacturer data alone
+- **Symptom**: the k3s backend deploy stored ~one reading ever, despite
+  `RUST_LOG=debug` and a running scan; the macOS app against the same
+  backend showed nothing new. User suspected the wrong BLE adapter.
+- **Diagnosis, on the homelab via SSH (`multivac`)**:
+  - Two USB adapters: `hci0` Realtek/IMC-Networks `13d3:3416` (works),
+    `hci1` Broadcom BCM20702A0 `0a5c:21e8` "multivac #2" — the dongle the
+    user just plugged in, and it receives **zero** BLE advertisements
+    (known-bad BLE-scan chip on modern Linux). `bluetoothctl show` proved
+    the pod scans `hci0` (`Discovering: yes`), i.e. the working one — the
+    adapter was **not** the problem.
+  - `sudo btmon` for 60 s: all three Meter Plus units emit **only**
+    `ADV_IND` with manufacturer data (`Company 2409` / `0x0969`), **never**
+    `Service Data FD3D`. The collector's store path fires only inside the
+    `ServiceDataAdvertisement` handler, so it had nothing to act on.
+  - Root cause: a meter's service data (device-type byte + battery) rides
+    in its `SCAN_RSP`, sent only in reply to a `SCAN_REQ`. The homelab
+    adapter is far enough (RSSI −76…−92 dBm) that the two-way exchange
+    never completes, so only the one-way `ADV_IND` arrives. On the Mac the
+    device was close, the exchange completes, service data arrives — hence
+    "works on Mac".
+  - Decoded the captured manufacturer data by hand against the existing
+    Outdoor-Meter byte layout (payload at bytes 8..11): D2:2E → 28.2 °C /
+    55 %, E4:90 → 28.8 °C / 52 %, E6:55 → 27.7 °C / 56 % — all plausible
+    for indoor August, confirming the layout before writing code.
+- **Fix** (`feat/meter-manufacturer-data-readings`):
+  - `switchbot.rs`: `ParsedReading.battery` `i64` → `Option<i64>`. New
+    `parse_meter_manufacturer_data(&[u8])` — decodes temp/humidity from
+    manufacturer bytes 8..11, `battery: None`. No device-type byte is
+    available, so it rejects any payload outside −40..=80 °C / 0..=100 %
+    (plus the all-zero boot payload) as the only guard against another
+    SwitchBot device sharing company `0x0969`. Shared 3-byte decode
+    extracted into `decode_temperature_humidity`.
+  - `scanner.rs`: the event loop now produces a candidate reading from
+    *either* `ManufacturerDataAdvertisement` or `ServiceDataAdvertisement`
+    and runs one common throttle → resolve-MAC → store tail.
+    `service_reading_seen: HashMap<device_id, DateTime<Utc>>` — a device
+    that produced a real service-data reading suppresses its
+    manufacturer-only path for `SERVICE_DATA_PREFERENCE_SECS` (1 h), so a
+    meter that sends both keeps the richer, battery-bearing reading and is
+    not double-stored.
+  - Docs: `docs/specs/architecture.md` §3 and
+    `.agents/notes/ble/2026-08-meter-manufacturer-data.md` updated.
+- **Verified**: `cargo test -p backend` 34/34 (4 new parser tests incl. the
+  three real captured payloads), `cargo clippy -p backend --all-targets -D
+  warnings` clean, the two touched files `rustfmt --check` clean (the
+  pre-existing `storage.rs`/`api/mod.rs` fmt deviations were left alone,
+  as before). **Not** verifiable here: the end-to-end BLE path — user
+  redeploys and checks `kubectl logs` for `reading recovered from
+  manufacturer data` / `reading stored` and `GET /readings/latest`.
+- **Operational follow-ups for the user**: set `READING_INTERVAL_SECONDS`
+  in the configmap (otherwise every `ADV_IND`, ~every few seconds, is now
+  stored); unplug the dead Broadcom dongle; a better dongle (e.g. TP-Link
+  UB500, RTL8761B) + a USB extension cable would recover the `SCAN_RSP`
+  (and battery) and improve range.
+- No commit/push made yet — on a branch per the user's request.

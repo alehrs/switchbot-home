@@ -62,65 +62,98 @@ pub async fn run(
     // Meter's temperature/humidity (and every meter's real MAC) live in the
     // manufacturer data, not the service data.
     let mut switchbot_mfr_data: HashMap<String, Vec<u8>> = HashMap::new();
+    // When each device's service data last yielded a reading. While that is
+    // recent, the device's manufacturer-data-only advertisements are skipped
+    // as a lower-quality duplicate (service data also carries battery); once
+    // it goes stale — the meter is too far to answer a `SCAN_REQ` any more —
+    // the manufacturer-data path takes over.
+    let mut service_reading_seen: HashMap<String, DateTime<Utc>> = HashMap::new();
 
     let mut events = adapter.events().await?;
     while let Some(event) = events.next().await {
-        // A single advertising PDU reaches us as separate service-data and
-        // manufacturer-data events; cache the latter so the service-data
-        // handler can pair them up.
-        if let CentralEvent::ManufacturerDataAdvertisement {
-            id,
-            manufacturer_data,
-        } = &event
-        {
-            if let Some(data) = manufacturer_data.get(&switchbot::SWITCHBOT_COMPANY_ID) {
-                switchbot_mfr_data.insert(id.to_string(), data.clone());
-            }
-            continue;
-        }
+        // A single advertising PDU arrives as separate service-data and
+        // manufacturer-data events. Both can yield a reading; the common
+        // throttle/store tail below runs once on whichever produced one.
+        let (id, device_id, parsed, mfr_data) = match &event {
+            CentralEvent::ManufacturerDataAdvertisement {
+                id,
+                manufacturer_data,
+            } => {
+                let Some(data) = manufacturer_data.get(&switchbot::SWITCHBOT_COMPANY_ID) else {
+                    continue;
+                };
+                let device_id = id.to_string();
+                switchbot_mfr_data.insert(device_id.clone(), data.clone());
 
-        let CentralEvent::ServiceDataAdvertisement { id, service_data } = event else {
-            continue;
+                if recently_seen(
+                    &service_reading_seen,
+                    &device_id,
+                    Duration::seconds(SERVICE_DATA_PREFERENCE_SECS),
+                ) {
+                    continue;
+                }
+                let Some(parsed) = switchbot::parse_meter_manufacturer_data(data) else {
+                    continue;
+                };
+                debug!(device = %id, "switchbot reading recovered from manufacturer data");
+                (id.clone(), device_id, parsed, Some(data.clone()))
+            }
+            CentralEvent::ServiceDataAdvertisement { id, service_data } => {
+                let Some(data) = service_data.iter().find_map(|(uuid, data)| {
+                    switchbot::is_switchbot_service_uuid(uuid).then_some(data)
+                }) else {
+                    continue;
+                };
+                debug!(device = %id, raw = ?data, "switchbot advertisement received");
+
+                let device_id = id.to_string();
+                let mfr_data = switchbot_mfr_data.get(&device_id).cloned();
+
+                let Some(parsed) = switchbot::parse_meter_advertisement(data, mfr_data.as_deref())
+                else {
+                    debug!(device = %id, "advertisement did not match a known meter format");
+                    continue;
+                };
+                service_reading_seen.insert(device_id.clone(), Utc::now());
+                (id.clone(), device_id, parsed, mfr_data)
+            }
+            _ => continue,
         };
 
-        for (uuid, data) in &service_data {
-            if !switchbot::is_switchbot_service_uuid(uuid) {
-                continue;
-            }
-            debug!(device = %id, raw = ?data, "switchbot advertisement received");
-
-            let device_id = id.to_string();
-            let mfr_data = switchbot_mfr_data.get(&device_id).map(Vec::as_slice);
-
-            let Some(parsed) = switchbot::parse_meter_advertisement(data, mfr_data) else {
-                debug!(device = %id, "advertisement did not match a known meter format");
-                continue;
-            };
-
-            if is_throttled(&last_stored, &device_id, reading_interval) {
-                debug!(device = %device_id, "skipping reading: within the throttle interval");
-                continue;
-            }
-
-            // Skip the lookup once a real MAC is already known for this
-            // device — it doesn't change, and a property lookup is
-            // unnecessary overhead on every throttle-surviving reading
-            // otherwise.
-            let mac_address = if mac_known.contains(&device_id) {
-                None
-            } else {
-                resolve_mac_address(&adapter, &id, mfr_data).await
-            };
-            if mac_address.is_some() {
-                mac_known.insert(device_id.clone());
-            }
-
-            store_reading(&storage, &device_id, mac_address.as_deref(), parsed).await;
-            last_stored.insert(device_id, Utc::now());
+        if is_throttled(&last_stored, &device_id, reading_interval) {
+            debug!(device = %device_id, "skipping reading: within the throttle interval");
+            continue;
         }
+
+        // Skip the lookup once a real MAC is already known for this device —
+        // it doesn't change, and a property lookup is unnecessary overhead
+        // on every throttle-surviving reading otherwise.
+        let mac_address = if mac_known.contains(&device_id) {
+            None
+        } else {
+            resolve_mac_address(&adapter, &id, mfr_data.as_deref()).await
+        };
+        if mac_address.is_some() {
+            mac_known.insert(device_id.clone());
+        }
+
+        store_reading(&storage, &device_id, mac_address.as_deref(), parsed).await;
+        last_stored.insert(device_id, Utc::now());
     }
 
     Ok(())
+}
+
+/// How long (seconds) a device's service-data reading keeps its
+/// manufacturer-data-only advertisements suppressed. One hour: long enough
+/// to ride out a meter that only answers a `SCAN_REQ` occasionally, short
+/// enough that a meter which has genuinely stopped delivering service data
+/// falls back well within a day.
+const SERVICE_DATA_PREFERENCE_SECS: i64 = 60 * 60;
+
+fn recently_seen(seen: &HashMap<String, DateTime<Utc>>, device_id: &str, window: Duration) -> bool {
+    seen.get(device_id)
+        .is_some_and(|at| Utc::now() - *at < window)
 }
 
 /// Resolves a device's real MAC, preferring the link-layer address
@@ -194,7 +227,7 @@ async fn store_reading(
         device_id: device_id.to_string(),
         temperature: parsed.temperature,
         humidity: parsed.humidity,
-        battery: Some(parsed.battery),
+        battery: parsed.battery,
         recorded_at: now,
     };
     if let Err(err) = storage.insert_reading(&reading).await {
@@ -266,5 +299,28 @@ mod tests {
             "CC:DD",
             Some(Duration::seconds(30))
         ));
+    }
+
+    #[test]
+    fn a_device_with_no_service_reading_is_not_recently_seen() {
+        let seen = HashMap::new();
+
+        assert!(!recently_seen(&seen, "AA:BB", Duration::seconds(3600)));
+    }
+
+    #[test]
+    fn a_recent_service_reading_suppresses_the_manufacturer_path() {
+        let mut seen = HashMap::new();
+        seen.insert("AA:BB".to_string(), Utc::now());
+
+        assert!(recently_seen(&seen, "AA:BB", Duration::seconds(3600)));
+    }
+
+    #[test]
+    fn a_stale_service_reading_no_longer_suppresses_the_manufacturer_path() {
+        let mut seen = HashMap::new();
+        seen.insert("AA:BB".to_string(), Utc::now() - Duration::seconds(3601));
+
+        assert!(!recently_seen(&seen, "AA:BB", Duration::seconds(3600)));
     }
 }
