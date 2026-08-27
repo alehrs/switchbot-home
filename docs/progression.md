@@ -881,3 +881,54 @@ Entry format:
   eyeballed by the user yet.
 - Next: user to confirm in actual use that "Settings…" now reliably
   surfaces on top, focused, on whichever Space they're currently on.
+
+## 2026-08-27 — Outdoor Meter (Indoor/Outdoor Meter) support
+- User has a SwitchBot Outdoor Meter (IP65). The scanner saw it
+  (`raw=[119, 192, 228]` = `[0x77, 0xC0, 0xE4]`, device type 0x77 'w') but
+  rejected every advertisement: "advertisement did not match a known meter
+  format". Worked on branch `feat/outdoor-meter-support`.
+- **Root cause**: the parser assumed all meters carry the 3-byte
+  temperature/humidity payload in service data bytes 3..6 (base Meter /
+  Meter Plus do). The Outdoor Meter's service data is only 3 bytes
+  (device type + battery); it moves that payload into its **manufacturer
+  data** bytes 8..11 (after a 6-byte MAC + 2-byte header). Cross-checked
+  against pySwitchbot's `process_wosensorth` and its
+  `test_woiosensor_passive_and_active` fixture (mfr
+  `aa bb cc dd ee ff e0 0f 06 98 35 00` → 24.6 °C, 53 %; service `77 00 e4`
+  → battery 100) and OpenWonderLabs' WoSensorTHO sample.
+- **`backend/src/ble/switchbot.rs`**:
+  - `METER_DEVICE_TYPES` gains 0x77/0x57 ('w'/'W').
+  - `parse_meter_advertisement` now takes `manufacturer_data: Option<&[u8]>`.
+    New `temperature_humidity_bytes` helper picks the 3-byte payload from
+    service data bytes 3..6 when present (keeps the hardware-confirmed
+    Meter Plus path byte-for-byte untouched), else manufacturer data bytes
+    8..11, else `None`.
+  - Added an all-zero-payload guard (temp 0 / humidity 0 / battery 0), same
+    as pySwitchbot — meters briefly broadcast that while booting.
+  - New `mac_from_manufacturer_data`: the first 6 bytes of the meter's
+    manufacturer data are its real MAC in natural order (matches
+    node-switchbot's `extractMacFromManufacturerData`). CoreBluetooth does
+    **not** mask this, unlike the link-layer address.
+  - New `pub const SWITCHBOT_COMPANY_ID: u16 = 0x0969`.
+- **`backend/src/ble/scanner.rs`**: `btleplug` delivers service data and
+  manufacturer data as *separate* `CentralEvent`s for one advertising PDU.
+  Added a per-device `switchbot_mfr_data: HashMap<String, Vec<u8>>` cache
+  populated from `ManufacturerDataAdvertisement` (company ID 0x0969) and
+  read in the `ServiceDataAdvertisement` handler. First advert after
+  startup can lose the service-vs-manufacturer event race and is skipped
+  (logged); the next broadcast (~seconds later) has both. New
+  `resolve_mac_address`: link-layer MAC first (real on BlueZ), then the
+  manufacturer-data MAC as a fallback — this is what finally yields a real
+  MAC on macOS. No storage/domain/API/config change; the device is
+  auto-discovered like any other.
+- Verified: `cargo test -p backend` 30/30 (4 new parser tests, incl. the
+  pySwitchbot fixture and the MAC extraction), `cargo clippy -p backend
+  --all-targets` clean, the two touched files pass `cargo fmt --check`
+  (7 pre-existing fmt deviations in `storage.rs`/`api/mod.rs` from an older
+  toolchain were left alone — not in scope). **Not** verified against the
+  real device: needs `RUST_LOG=debug cargo run -p backend` with the Outdoor
+  Meter in range to confirm a full advertisement (service + manufacturer)
+  parses and a reading lands via `GET /readings/latest`.
+- Updated `docs/specs/architecture.md` §3.
+- Next: user to run the backend against the real Outdoor Meter and confirm
+  readings + a non-null `mac_address` (even on the Mac).
