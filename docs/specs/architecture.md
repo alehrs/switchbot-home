@@ -50,6 +50,18 @@ switchbot-home/
     as separate advertisement events, so the collector caches the latest
     SwitchBot (company ID 0x0969) manufacturer data per device and pairs
     the two up. Matches pySwitchbot's `process_wosensorth`.
+  - A meter's service data rides in its `SCAN_RSP`, sent only in reply to a
+    `SCAN_REQ` from the scanner. A meter far enough that the two-way
+    exchange fails delivers **only** its `ADV_IND` — manufacturer data, no
+    service data — so the collector never sees a `ServiceDataAdvertisement`
+    for it. `parse_meter_manufacturer_data` recovers a reading (temperature
+    and humidity; no battery, that byte is service-data-only) from the
+    manufacturer data alone. It has no device-type byte to check, so it
+    rejects any payload outside a plausible physical range; a device seen
+    to send real service data suppresses its manufacturer-only path for an
+    hour (`SERVICE_DATA_PREFERENCE_SECS`). This is what makes the homelab's
+    (distant) Meter Plus units readable — confirmed with `btmon` that they
+    only ever emit `ADV_IND` at that range.
 - There is **no SwitchBot Hub** in this setup, and the **SwitchBot cloud
   API is entirely out of scope**: it only exposes current status and
   webhooks, not the on-device historical log, and it requires a Hub to

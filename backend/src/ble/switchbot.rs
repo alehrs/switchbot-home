@@ -11,6 +11,12 @@
 //! data stops after the battery byte; it moves the same 3-byte payload into
 //! its manufacturer data (bytes 8..11, after a 6-byte MAC and a 2-byte
 //! header). Matches pySwitchbot's `process_wosensorth`.
+//!
+//! A meter seen from too far to answer a `SCAN_REQ` never delivers its
+//! service data at all (that rides in the `SCAN_RSP`), only the `ADV_IND`
+//! with the same manufacturer-data payload. `parse_meter_manufacturer_data`
+//! recovers a reading (minus battery, which lives only in service data)
+//! from that alone.
 
 use std::sync::LazyLock;
 
@@ -43,7 +49,9 @@ static SWITCHBOT_SERVICE_UUIDS: LazyLock<[Uuid; 2]> = LazyLock::new(|| {
 pub struct ParsedReading {
     pub temperature: f64,
     pub humidity: f64,
-    pub battery: i64,
+    /// `None` for a reading recovered from manufacturer data alone — the
+    /// battery byte only ever appears in service data.
+    pub battery: Option<i64>,
 }
 
 pub fn is_switchbot_service_uuid(uuid: &Uuid) -> bool {
@@ -68,17 +76,8 @@ pub fn parse_meter_advertisement(
     }
 
     let battery = i64::from(byte2 & 0x7F);
-    let [decimal, sign_and_integer, humidity_byte] =
-        temperature_humidity_bytes(service_data, manufacturer_data)?;
-
-    let sign = if sign_and_integer & 0x80 == 0 {
-        -1.0
-    } else {
-        1.0
-    };
-    let temperature =
-        sign * (f64::from(sign_and_integer & 0x7F) + f64::from(decimal & 0x0F) / 10.0);
-    let humidity = f64::from(humidity_byte & 0x7F);
+    let (temperature, humidity) =
+        decode_temperature_humidity(temperature_humidity_bytes(service_data, manufacturer_data)?);
 
     // A meter briefly broadcasts an all-zero payload while booting or
     // pairing; pySwitchbot discards it and so do we, to avoid storing a
@@ -90,8 +89,53 @@ pub fn parse_meter_advertisement(
     Some(ParsedReading {
         temperature,
         humidity,
-        battery,
+        battery: Some(battery),
     })
+}
+
+/// Parses a reading from a meter's manufacturer data alone, for meters seen
+/// from too far to complete the `SCAN_REQ`/`SCAN_RSP` exchange their service
+/// data rides in. The temperature/humidity payload sits at bytes 8..11 —
+/// after the 6-byte MAC and a 2-byte header — exactly as in the Outdoor
+/// Meter's manufacturer data.
+///
+/// Manufacturer data carries no device-type byte, so this cannot confirm
+/// the sender is a meter rather than another SwitchBot device sharing
+/// company ID `0x0969`. A payload that doesn't decode to a physically
+/// plausible reading is rejected as the only available guard.
+pub fn parse_meter_manufacturer_data(manufacturer_data: &[u8]) -> Option<ParsedReading> {
+    let &[_, _, _, _, _, _, _, _, b8, b9, b10, ..] = manufacturer_data else {
+        return None;
+    };
+
+    let (temperature, humidity) = decode_temperature_humidity([b8, b9, b10]);
+
+    if temperature == 0.0 && humidity == 0.0 {
+        return None;
+    }
+    if !(-40.0..=80.0).contains(&temperature) || !(0.0..=100.0).contains(&humidity) {
+        return None;
+    }
+
+    Some(ParsedReading {
+        temperature,
+        humidity,
+        battery: None,
+    })
+}
+
+/// Decodes the 3-byte `[decimal, sign+integer, humidity]` temperature/
+/// humidity payload every meter model shares, wherever it was found.
+fn decode_temperature_humidity([decimal, sign_and_integer, humidity_byte]: [u8; 3]) -> (f64, f64) {
+    let sign = if sign_and_integer & 0x80 == 0 {
+        -1.0
+    } else {
+        1.0
+    };
+    let temperature =
+        sign * (f64::from(sign_and_integer & 0x7F) + f64::from(decimal & 0x0F) / 10.0);
+    let humidity = f64::from(humidity_byte & 0x7F);
+    (temperature, humidity)
 }
 
 /// The 3 bytes that encode temperature and humidity. The base Meter and
@@ -134,7 +178,7 @@ mod tests {
 
         assert_eq!(reading.temperature, 23.5);
         assert_eq!(reading.humidity, 67.0);
-        assert_eq!(reading.battery, 90);
+        assert_eq!(reading.battery, Some(90));
     }
 
     #[test]
@@ -146,7 +190,7 @@ mod tests {
 
         assert_eq!(reading.temperature, -5.3);
         assert_eq!(reading.humidity, 40.0);
-        assert_eq!(reading.battery, 15);
+        assert_eq!(reading.battery, Some(15));
     }
 
     #[test]
@@ -159,7 +203,7 @@ mod tests {
 
         assert_eq!(reading.temperature, 23.8);
         assert_eq!(reading.humidity, 65.0);
-        assert_eq!(reading.battery, 82);
+        assert_eq!(reading.battery, Some(82));
     }
 
     #[test]
@@ -177,7 +221,51 @@ mod tests {
 
         assert_eq!(reading.temperature, 24.6);
         assert_eq!(reading.humidity, 53.0);
-        assert_eq!(reading.battery, 100);
+        assert_eq!(reading.battery, Some(100));
+    }
+
+    #[test]
+    fn parses_a_meter_plus_reading_from_manufacturer_data_alone() {
+        // Real ADV_IND manufacturer data (company ID 0x0969 stripped) from a
+        // homelab Meter Plus, captured with btmon: 6-byte MAC, 2-byte header,
+        // then the temperature/humidity payload at bytes 8..11. No service
+        // data reached the adapter, so there is no battery reading.
+        let manufacturer_data = [
+            0xD2, 0x2E, 0x81, 0x06, 0x5C, 0x61, 0x6C, 0x0F, 0x02, 0x9C, 0x37,
+        ];
+
+        let reading = parse_meter_manufacturer_data(&manufacturer_data).expect("should parse");
+
+        assert_eq!(reading.temperature, 28.2);
+        assert_eq!(reading.humidity, 55.0);
+        assert_eq!(reading.battery, None);
+    }
+
+    #[test]
+    fn ignores_manufacturer_data_too_short_for_a_reading() {
+        let manufacturer_data = [0xE4, 0x90, 0x00, 0xC6, 0x52, 0x41, 0x09, 0x0E];
+
+        assert_eq!(parse_meter_manufacturer_data(&manufacturer_data), None);
+    }
+
+    #[test]
+    fn ignores_manufacturer_data_that_decodes_to_an_implausible_reading() {
+        // Bytes 8..11 decode to humidity 0x7F & 0x7F = 127 %, out of range —
+        // the guard against another SwitchBot device sharing company 0x0969.
+        let manufacturer_data = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x00, 0x00, 0x00, 0x9C, 0x7F,
+        ];
+
+        assert_eq!(parse_meter_manufacturer_data(&manufacturer_data), None);
+    }
+
+    #[test]
+    fn ignores_an_all_zero_manufacturer_payload() {
+        let manufacturer_data = [
+            0xD2, 0x2E, 0x81, 0x06, 0x5C, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+
+        assert_eq!(parse_meter_manufacturer_data(&manufacturer_data), None);
     }
 
     #[test]
