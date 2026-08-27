@@ -31,17 +31,25 @@ switchbot-home/
 
 ## 3. Hardware Context
 
-- Sensors: SwitchBot Meter Plus. They broadcast temperature, humidity, and
-  battery level in BLE advertisement **service data** (not manufacturer
-  data) every few seconds — no pairing or bonding required to read them.
-  Format reference: [OpenWonderLabs' official BLE API docs](https://github.com/OpenWonderLabs/SwitchBotAPI-BLE/blob/latest/devicetypes/meter.md).
-  Meter and Meter Plus share the same 6-byte payload; implemented in
-  `backend/src/ble/switchbot.rs`. **Gap in the official doc**: it only
-  lists device type byte 0x54/0x74 ('T'/'t') for the base Meter. A real
-  Meter Plus was confirmed to broadcast device type 0x69 ('i'), matching
-  [pySwitchbot's](https://github.com/sblibs/pySwitchbot) device type table
-  (which maps both 'T'/'t' and 'I'/'i' to the same parser) — added to
-  `METER_DEVICE_TYPES` alongside the documented codes.
+- Sensors: SwitchBot Meter Plus and SwitchBot Outdoor Meter (Indoor/Outdoor
+  Meter). They broadcast temperature, humidity, and battery level in BLE
+  advertisements every few seconds — no pairing or bonding required to read
+  them. Format reference: [OpenWonderLabs' official BLE API docs](https://github.com/OpenWonderLabs/SwitchBotAPI-BLE/blob/latest/devicetypes/meter.md).
+  Implemented in `backend/src/ble/switchbot.rs`. **Gaps in the official
+  doc**:
+  - It only lists device type byte 0x54/0x74 ('T'/'t') for the base Meter.
+    A real Meter Plus was confirmed to broadcast device type 0x69 ('i'),
+    matching [pySwitchbot's](https://github.com/sblibs/pySwitchbot) device
+    type table (which maps both 'T'/'t' and 'I'/'i' to the same parser).
+    The Outdoor Meter uses 'w'/'W'. All are in `METER_DEVICE_TYPES`.
+  - The base Meter and Meter Plus carry the 3-byte temperature/humidity
+    payload in their **service data** (bytes 3..6). The Outdoor Meter's
+    service data stops after the battery byte and moves that same payload
+    into its **manufacturer data** (bytes 8..11, after a 6-byte MAC and a
+    2-byte header). `btleplug` delivers service data and manufacturer data
+    as separate advertisement events, so the collector caches the latest
+    SwitchBot (company ID 0x0969) manufacturer data per device and pairs
+    the two up. Matches pySwitchbot's `process_wosensorth`.
 - There is **no SwitchBot Hub** in this setup, and the **SwitchBot cloud
   API is entirely out of scope**: it only exposes current status and
   webhooks, not the on-device historical log, and it requires a Hub to
@@ -65,8 +73,12 @@ switchbot-home/
   always reports `BDAddr::default()` (all-zero) instead of a real address
   — Apple never exposes it to apps — so the collector detects that
   placeholder and stores `NULL` rather than a fake, identical-across-
-  devices value. This column is informational only; `device_id` remains
-  the identity/primary key for the reason above.
+  devices value. **Exception**: SwitchBot meters embed their real MAC in
+  the first 6 bytes of their manufacturer data, which CoreBluetooth does
+  *not* mask, so the collector falls back to that (`resolve_mac_address`
+  in `backend/src/ble/scanner.rs`) and can record a genuine MAC even on
+  macOS. This column is informational only; `device_id` remains the
+  identity/primary key for the reason above.
 
 ## 4. System Architecture
 

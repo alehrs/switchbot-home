@@ -56,9 +56,29 @@ pub async fn run(
     // throttle-surviving reading instead of being silently forgone for
     // good.
     let mut mac_known: HashSet<String> = HashSet::new();
+    // Latest SwitchBot manufacturer data seen per device. `btleplug` splits
+    // a single advertising PDU into separate service-data and
+    // manufacturer-data events, so this cache reunites them: the Outdoor
+    // Meter's temperature/humidity (and every meter's real MAC) live in the
+    // manufacturer data, not the service data.
+    let mut switchbot_mfr_data: HashMap<String, Vec<u8>> = HashMap::new();
 
     let mut events = adapter.events().await?;
     while let Some(event) = events.next().await {
+        // A single advertising PDU reaches us as separate service-data and
+        // manufacturer-data events; cache the latter so the service-data
+        // handler can pair them up.
+        if let CentralEvent::ManufacturerDataAdvertisement {
+            id,
+            manufacturer_data,
+        } = &event
+        {
+            if let Some(data) = manufacturer_data.get(&switchbot::SWITCHBOT_COMPANY_ID) {
+                switchbot_mfr_data.insert(id.to_string(), data.clone());
+            }
+            continue;
+        }
+
         let CentralEvent::ServiceDataAdvertisement { id, service_data } = event else {
             continue;
         };
@@ -69,12 +89,14 @@ pub async fn run(
             }
             debug!(device = %id, raw = ?data, "switchbot advertisement received");
 
-            let Some(parsed) = switchbot::parse_meter_advertisement(data) else {
+            let device_id = id.to_string();
+            let mfr_data = switchbot_mfr_data.get(&device_id).map(Vec::as_slice);
+
+            let Some(parsed) = switchbot::parse_meter_advertisement(data, mfr_data) else {
                 debug!(device = %id, "advertisement did not match a known meter format");
                 continue;
             };
 
-            let device_id = id.to_string();
             if is_throttled(&last_stored, &device_id, reading_interval) {
                 debug!(device = %device_id, "skipping reading: within the throttle interval");
                 continue;
@@ -87,7 +109,7 @@ pub async fn run(
             let mac_address = if mac_known.contains(&device_id) {
                 None
             } else {
-                fetch_mac_address(&adapter, &id).await
+                resolve_mac_address(&adapter, &id, mfr_data).await
             };
             if mac_address.is_some() {
                 mac_known.insert(device_id.clone());
@@ -99,6 +121,23 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+/// Resolves a device's real MAC, preferring the link-layer address
+/// (`btleplug`'s peripheral properties — the genuine MAC on BlueZ) and
+/// falling back to the one SwitchBot meters embed in their manufacturer
+/// data. The fallback is what makes a real MAC available on macOS, where
+/// CoreBluetooth never exposes the link-layer address.
+async fn resolve_mac_address(
+    adapter: &Adapter,
+    id: &PeripheralId,
+    manufacturer_data: Option<&[u8]>,
+) -> Option<String> {
+    if let Some(mac) = fetch_mac_address(adapter, id).await {
+        return Some(mac);
+    }
+    let mac = switchbot::mac_from_manufacturer_data(manufacturer_data?)?;
+    Some(BDAddr::from(mac).to_string())
 }
 
 fn is_throttled(
