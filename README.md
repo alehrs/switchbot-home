@@ -88,6 +88,12 @@ Configuration is via environment variables, all optional:
 - `RETENTION_DAYS` — days of readings to keep; older ones are deleted
   automatically (checked hourly). E.g. `300` keeps roughly the last 300
   days. Default (unset): readings are never deleted.
+- `BLE_ADAPTER` — which Bluetooth adapter to scan on, when the host has
+  more than one. Matched as a substring of the adapter's info string
+  (e.g. `hci1 (usb:v2357p0604d…)`), so either an `hciN` name (`hci1`) or
+  a USB modalias fragment (`v2357p0604`) works; the modalias form is
+  recommended since it survives `hciN` renumbering across reboots.
+  Default (unset): the first adapter found.
 
 ### BLE scanning
 
@@ -95,6 +101,13 @@ Requires a Bluetooth adapter. On macOS you also need to grant Bluetooth
 permission to your terminal app once: System Settings → Privacy &
 Security → Bluetooth → add your terminal. Without it, `btleplug` silently
 finds no devices.
+
+The scanner supervises itself: BlueZ ends the advertisement stream
+without an error whenever the adapter is reset (USB re-plug, `bluetoothd`
+restart), so it reconnects automatically with backoff rather than going
+quiet until the process is restarted. With multiple adapters, pin one
+with `BLE_ADAPTER` (above) — otherwise the choice is not stable across
+restarts.
 
 To debug the parser against a real device, run with debug logging enabled:
 

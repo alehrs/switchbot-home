@@ -29,19 +29,16 @@ async fn main() {
         .expect("failed to connect to database");
     let storage = Arc::new(storage);
 
-    // BLE scanning runs independently of the HTTP server: a scan failure
-    // (e.g. missing adapter, denied OS permission) shouldn't take the API
-    // down too.
+    // BLE scanning runs independently of the HTTP server: it supervises
+    // itself (reconnecting on adapter resets) and never returns, but even
+    // if that ever changed, a scan problem shouldn't take the API down.
     let reading_interval = config
         .reading_interval_secs
         .map(|secs| Duration::seconds(secs as i64));
     tokio::spawn({
         let storage = Arc::clone(&storage);
-        async move {
-            if let Err(err) = ble::run(storage, reading_interval).await {
-                tracing::error!(error = %err, "BLE scanner stopped");
-            }
-        }
+        let ble_adapter = config.ble_adapter.clone();
+        async move { ble::run(storage, reading_interval, ble_adapter).await }
     });
 
     if let Some(retention_days) = config.retention_days {

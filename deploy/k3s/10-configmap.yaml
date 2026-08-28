@@ -14,3 +14,7 @@ data:
   #   kubectl rollout restart deployment/switchbot-home-backend -n switchbot-home
   # READING_INTERVAL_SECONDS: "30"
   # RETENTION_DAYS: "300"
+  # Which Bluetooth adapter to scan (substring of the adapter info string:
+  # an hciN name or a USB modalias fragment). Needed only with >1 adapter.
+  # The maintainer's node has a TP-Link UB500 (USB 2357:0604) for range.
+  # BLE_ADAPTER: "v2357p0604"

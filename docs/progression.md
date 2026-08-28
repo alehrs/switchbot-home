@@ -1045,3 +1045,73 @@ Entry format:
 - Next: user to run the app against `cargo run -p backend`, edit a real
   device (set label+room, then clear the label), and confirm the row
   updates live and `GET /devices` persisted it.
+
+## 2026-08-28 — Homelab diagnosis: TP-Link UB500 added; scanner was silently dead
+- User plugged a TP-Link UB500 long-range BT dongle into the homelab and
+  asked whether the service now reads via it. SSH'd in (`multivac`) +
+  `kubectl` + API to check.
+- **Findings**: (1) the k3s pod had stored **no reading for ~26 h** — last
+  one 2026-08-27 16:59, right when the dongles were disturbed. The scanner
+  event loop had exited silently (`events.next()` → `None` on adapter
+  reset; `run` returned `Ok(())`; task ended; no error). (2) It was bound
+  to `hci0` = the old BT 4.0 Realtek, not the UB500 (`hci1`). (3)
+  `device_id` = `PeripheralId::to_string()` = `hciN/dev_MAC`, so the two
+  adapters had produced 6 `devices` rows for 3 physical meters.
+- Restarted the pod to verify: btleplug bound `hci1` (the UB500), all 3
+  meters read every few seconds **with battery** (the long-range adapter
+  completes the `SCAN_REQ`/`SCAN_RSP` the old one couldn't at that range).
+  So it works *now*, but by luck (no adapter pinning) and would die again
+  on the next blip.
+
+## 2026-08-28 — BLE scanner: self-healing loop + BLE_ADAPTER + adapter-independent device_id
+- Spec: `docs/specs/ble-scanner-resilience-and-adapter-selection.md`.
+  Branch `feat/ble-scanner-resilience`.
+- **Resilience** (`backend/src/ble/scanner.rs`, `main.rs`): split the old
+  `run` body into `scan_session` (one attempt: pick adapter → scan →
+  consume `events()` until it ends/errors) and a new `run` supervisor
+  that loops it forever with exponential backoff (1 s → 60 s cap, reset
+  after a ≥30 s healthy session). The four per-device caches moved into a
+  `ScannerState` owned by `run` so a reconnect doesn't re-resolve every
+  MAC or dump a burst of unthrottled readings. `run` returns `()` now;
+  `main.rs` dropped the `if let Err` wrapper. Retries forever even with
+  no adapter (dev Mac) — one WARN/≤60 s, and a later plug-in just works.
+- **Adapter selection** (`config.rs`, `scanner.rs`): `BLE_ADAPTER` env var,
+  substring-matched against `Central::adapter_info()` (e.g.
+  `"hci1 (usb:v2357p0604d…)"`) — so `hci1` or a modalias fragment
+  `v2357p0604` (survives `hciN` renumbering) both work. Unset = first
+  adapter (old behaviour). No match → logs every connected adapter then
+  `BleError::AdapterNotFound` (retryable). Chosen adapter logged at
+  startup. `select_adapter` + pure `adapter_matches`.
+- **Adapter-independent identity** (`scanner.rs` + migration
+  `0003_strip_adapter_prefix.sql`): pure `strip_adapter_prefix` takes the
+  part after the first `/` before persisting (raw `PeripheralId` still
+  used for `adapter.peripheral(id)`); macOS UUIDs (no `/`) untouched. On
+  BlueZ `device_id` is now `dev_<MAC>`. Migration rewrites + merges
+  existing prefixed rows — order (insert stripped → repoint readings →
+  delete prefixed) keeps the `readings → devices` FK valid throughout;
+  merge rule `MIN(first_seen_at)`/`MAX(last_seen_at)`/`COALESCE` others.
+- **Verified**: `cargo test -p backend` 41 passing (4 new pure-fn tests:
+  `strip_adapter_prefix` ×2, `adapter_matches`, `next_backoff`), `cargo
+  clippy -p backend --all-targets` clean, touched files `rustfmt --check`
+  clean (reverted the collateral reformat of `storage.rs`/`api/mod.rs` —
+  `rustfmt` follows `mod` from `main.rs`; those pre-existing deviations
+  stay untouched, as before). Migration verified by running it with
+  `sqlite3` against (a) a copy of the real homelab DB and (b) a synthetic
+  6-row/3-pair DB: 3 devices out, prefixes gone, reading counts
+  preserved, `PRAGMA foreign_key_check` clean.
+- **Not verified** (needs the homelab): the supervisor actually
+  reconnecting on a real unplug/replug, and the migration running
+  in-process on the live WAL DB.
+- Docs: new spec, `architecture.md` §3, `README.md` (Config +
+  BLE scanning), `deploy/k3s/10-configmap.yaml` (commented `BLE_ADAPTER`),
+  `.agents/notes/ble/2026-08-scanner-resilience.md`.
+- No commit/push. **Note on branch state**: `feat/ble-scanner-resilience`
+  was cut from `feat/meter-manufacturer-data-readings` and also carries
+  the uncommitted 2026-08-27 macOS device-edit changes (backend paths and
+  `macos-app/` paths are disjoint — commit them separately).
+- **Deploy steps for the user**: build+roll the new image; set
+  `BLE_ADAPTER: "v2357p0604"` **and** finally `READING_INTERVAL_SECONDS`
+  in the configmap; confirm `kubectl logs` shows the chosen adapter, then
+  unplug/replug the dongle and confirm `BLE event stream ended;
+  reconnecting` → `BLE scan started` → readings resume with no pod
+  restart; confirm `GET /devices` shows 3 rows without the `hciN/` prefix.
