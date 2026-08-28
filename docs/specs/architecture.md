@@ -61,7 +61,20 @@ switchbot-home/
     to send real service data suppresses its manufacturer-only path for an
     hour (`SERVICE_DATA_PREFERENCE_SECS`). This is what makes the homelab's
     (distant) Meter Plus units readable — confirmed with `btmon` that they
-    only ever emit `ADV_IND` at that range.
+    only ever emit `ADV_IND` at that range. A longer-range USB adapter
+    (the homelab uses a TP-Link UB500) recovers the `SCAN_RSP`, and with
+    it the battery byte.
+- **Scanner resilience**: btleplug's BlueZ backend ends the advertisement
+  stream *without an error* when the adapter is reset (USB re-enumeration,
+  `bluetoothd` restart, dongle re-plugged). `backend/src/ble/scanner.rs`
+  runs `scan_session` under a supervisor loop (`run`) that reconnects
+  with exponential backoff (1 s → 60 s) and never exits — a single blip
+  used to leave the collector silently dead until a process restart.
+- **Adapter selection**: with more than one adapter, btleplug's
+  `manager.adapters().next()` is not stable across restarts. `BLE_ADAPTER`
+  (substring match against btleplug's adapter info — an `hciN` name or a
+  USB modalias fragment) pins the choice; unset keeps the first-found
+  default. The chosen adapter is logged at startup.
 - There is **no SwitchBot Hub** in this setup, and the **SwitchBot cloud
   API is entirely out of scope**: it only exposes current status and
   webhooks, not the on-device historical log, and it requires a Hub to
@@ -78,6 +91,13 @@ switchbot-home/
   backend moves from a Mac (dev) to the homelab (Linux) host. For this
   reason the schema and API use the neutral term `device_id`, not
   `mac_address`, as the primary key.
+  - btleplug's BlueZ `PeripheralId` stringifies as `hciN/dev_AA_BB_…`, so
+    the *same* meter seen through a different adapter would otherwise be a
+    new `device_id`. The collector strips the `hciN/` prefix
+    (`strip_adapter_prefix`) so identity is adapter-independent; on BlueZ
+    the stored `device_id` is then just `dev_<MAC>`. Migration
+    `0003_strip_adapter_prefix.sql` rewrites and merges pre-existing
+    prefixed rows. macOS UUIDs (no `/`) are unaffected.
 - **`devices.mac_address` (added later, nullable)**: the collector also
   best-effort records the real hardware MAC as a separate column, via
   `btleplug`'s `Peripheral::properties().address`. On the BlueZ/Linux
