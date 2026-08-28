@@ -34,6 +34,53 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshots.first?.latestTemperature, 21.0)
     }
 
+    func testApplyDeviceUpdateSetsLabelAndRoomWithoutTouchingReadings() {
+        let store = AppStore()
+        let now = Date()
+        let device = device(id: "AA:BB", firstSeenAt: now)
+        store.applyFullRefresh(
+            devices: [device],
+            historiesByDeviceID: ["AA:BB": [reading(deviceID: "AA:BB", temperature: 20.0, recordedAt: now)]]
+        )
+
+        var updated = device
+        updated.label = "Camera"
+        updated.room = "Piano terra"
+        store.applyDeviceUpdate(updated)
+
+        let snapshot = store.snapshots.first
+        XCTAssertEqual(snapshot?.displayName, "Camera")
+        XCTAssertEqual(snapshot?.room, "Piano terra")
+        XCTAssertEqual(snapshot?.latestTemperature, 20.0)
+        XCTAssertEqual(store.sections.map(\.title), ["Piano terra"])
+    }
+
+    func testApplyDeviceUpdateClearingTheLabelRestoresTheUnknownDeviceName() {
+        let store = AppStore()
+        let now = Date()
+        let device = device(id: "AA:BB", firstSeenAt: now)
+        store.applyFullRefresh(devices: [device], historiesByDeviceID: [:])
+
+        var labeled = device
+        labeled.label = "Camera"
+        store.applyDeviceUpdate(labeled)
+        var cleared = labeled
+        cleared.label = nil
+        store.applyDeviceUpdate(cleared)
+
+        XCTAssertEqual(store.snapshots.first?.displayName, "Unknown device #1")
+    }
+
+    func testApplyDeviceUpdateForAnUnknownDeviceIsANoOp() {
+        let store = AppStore()
+        let now = Date()
+        store.applyFullRefresh(devices: [device(id: "AA:BB", firstSeenAt: now)], historiesByDeviceID: [:])
+
+        store.applyDeviceUpdate(device(id: "ZZ:ZZ", firstSeenAt: now))
+
+        XCTAssertEqual(store.snapshots.map(\.id), ["AA:BB"])
+    }
+
     func testFullRefreshDoesApplyAGenuinelyNewerValue() {
         let store = AppStore()
         let now = Date()

@@ -9,7 +9,9 @@ enum ConnectionState: Equatable {
 
 /// The single source of truth for what the UI shows. Owns the current
 /// snapshots, derives room sections from them, and tracks connectivity.
-/// Mutated only from `PollingService`; read by every view.
+/// Mutated from `PollingService` (the poll cycles) and from
+/// `DeviceEditView` (an in-app label/room edit, via `applyDeviceUpdate`);
+/// read by every view.
 @MainActor
 @Observable
 final class AppStore {
@@ -70,6 +72,19 @@ final class AppStore {
             byID[reading.deviceID] = snapshot
         }
         snapshots = snapshots.map { byID[$0.id] ?? $0 }
+        LocalCache.save(snapshots)
+    }
+
+    /// Applies the `Device` returned by `PUT /devices/{id}` after an
+    /// in-app edit, so the popover reflects a new label/room immediately
+    /// instead of waiting for the next slow poll cycle. Only the embedded
+    /// `Device` is replaced: `rank` (keyed off `first_seen_at`) and every
+    /// reading/average/trend field are unaffected by a label/room change.
+    /// `sections` recomputes on its own, so a room change re-groups the
+    /// row and a cleared label reverts it to "Unknown device #N".
+    func applyDeviceUpdate(_ updated: Device) {
+        guard let index = snapshots.firstIndex(where: { $0.id == updated.deviceID }) else { return }
+        snapshots[index].device = updated
         LocalCache.save(snapshots)
     }
 

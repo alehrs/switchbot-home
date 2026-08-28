@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		03B8A77FE9595CDE89069E64 /* DeviceEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C80439E00D159081B022A3 /* DeviceEditView.swift */; };
 		03C15B8F9341BB8910AAC3EB /* OfflineBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */; };
 		105606C945B4D356C81FC8AE /* BackendCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7C462637E7E3B0C603E230 /* BackendCoding.swift */; };
 		19EB0EC05593693076BBAC0E /* DeviceNumbering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3D79C4117F5D684E38E959 /* DeviceNumbering.swift */; };
@@ -72,6 +73,7 @@
 		66838332253E31289DDC0B12 /* SwitchBotHome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwitchBotHome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		703BAD427DD480C9DC984986 /* DeviceNumberingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceNumberingTests.swift; sourceTree = "<group>"; };
 		7CB3009F4C93E6A10E479C6E /* DeviceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSnapshot.swift; sourceTree = "<group>"; };
+		82C80439E00D159081B022A3 /* DeviceEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceEditView.swift; sourceTree = "<group>"; };
 		86FCB7B2F97556C9C210B2E6 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		8849D5025285EE78018583FB /* PollingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingService.swift; sourceTree = "<group>"; };
 		88FDEC75CCB62D3B8C61943B /* Reading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reading.swift; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 			isa = PBXGroup;
 			children = (
 				F086906AAFEBC519A59A05EE /* DeviceDetailView.swift */,
+				82C80439E00D159081B022A3 /* DeviceEditView.swift */,
 				05C0F16A31DA3BA3F70DAEE5 /* DeviceRowView.swift */,
 				D29A5AC1AF5D341DAD13CB85 /* MenuBarLabelView.swift */,
 				BFCEA0FE0F50F4C08866C5B5 /* OfflineBannerView.swift */,
@@ -332,6 +335,7 @@
 				F3645A3F5F2096B1AD07DEFC /* DayRange.swift in Sources */,
 				CFD9990EA5526D79DCFCE554 /* Device.swift in Sources */,
 				87C6D7B3E5A5B0C9815435EE /* DeviceDetailView.swift in Sources */,
+				03B8A77FE9595CDE89069E64 /* DeviceEditView.swift in Sources */,
 				19EB0EC05593693076BBAC0E /* DeviceNumbering.swift in Sources */,
 				633FEDEE72824DB842712283 /* DeviceRowView.swift in Sources */,
 				CE41387F97941A4890E65727 /* DeviceSnapshot.swift in Sources */,
