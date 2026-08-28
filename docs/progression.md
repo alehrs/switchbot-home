@@ -989,3 +989,59 @@ Entry format:
   UB500, RTL8761B) + a USB extension cable would recover the `SCAN_RSP`
   (and battery) and improve range.
 - No commit/push made yet — on a branch per the user's request.
+
+## 2026-08-27 — macOS app: in-app editing of a device's label & room
+- User: the macOS app had no way to name a device or set its room — that
+  was a manual `backend/api.http`/curl step (deferred in
+  `docs/specs/macos-app.md` §11 since v1). Now done for **label + room**;
+  the `blacklisted` flag is still curl-only (user's call — the new API
+  method carries the parameter so a future toggle is one line).
+- Backend needed nothing: `PUT /devices/{device_id}`
+  (`backend/src/api/devices.rs`) already does the tri-state
+  (omit=unchanged / `""`=clear / value=set) and returns the updated
+  `Device`. macOS-app-only change.
+- `Networking/APIClient.swift`: first write path in the app (everything
+  was `session.data(from:)` GETs). Added `updateDevice(deviceID:label:room:blacklisted:)`,
+  an `internal` `makeUpdateRequest` (test seam, like `urlComponents`), a
+  private `UpdateDeviceBody: Encodable` (nil fields omitted by
+  `JSONEncoder` = the backend's "unchanged" semantics), a generic
+  `send(_:request:)`, and `APIError.encoding`. `get(_:url:)` now delegates
+  to `send` via `URLRequest(url:)` so status-check/error-wrapping lives in
+  one place (caught in self-review — was duplicated). The PUT goes through
+  the same `pathEncoded` + `percentEncodedPath` path as `fetchReadings`,
+  so the `%2F`-in-Linux-device-id double-encoding trap
+  (`.agents/notes/macos-app/2026-08-urlcomponents-path-double-encoding.md`)
+  is covered; there's a regression test for it.
+- `Store/AppStore.swift`: `applyDeviceUpdate(_:)` patches just the
+  matching snapshot's `Device` in place (rank/readings/trends untouched —
+  a label/room change affects none of them; `sections` is computed so the
+  row re-groups immediately). Relaxes the old "mutated only from
+  `PollingService`" invariant — doc comment updated.
+- `Views/DeviceEditView.swift` (new): pushed onto the existing popover
+  `NavigationStack` from an "Edit" button in `DeviceDetailView`'s header
+  (`DeviceEditRoute` — a distinct nav type so it doesn't collide with the
+  plain-`String` detail destination). `SettingsView`-style draft buffer +
+  `Form`; a `Menu` offers existing room names to cut down on
+  "cucina"/"Cucina" splits (`GroupingRules` groups verbatim). Empty field
+  → sends `""` → backend clears to NULL, so the UI needs no tri-state.
+  Save `PUT`s, `applyDeviceUpdate`s, then pops; failure shows an inline
+  red message, no crash.
+- `.onAppear { NSApp.activate() }` on the edit screen as a **prophylactic**
+  for the known `MenuBarExtra(.window)` + `LSUIElement` text-field
+  keyboard-focus quirk (same class as the Settings-window activation
+  note). Not verified in-session — user should confirm typing works
+  immediately on opening the screen.
+- Docs: `docs/specs/macos-app.md` §11/§12 updated, new §13 "Device
+  editing" (old §13 → §14).
+- Verified: `xcodegen generate` + `xcodebuild build test` — 0 `.swift`
+  warnings, 56 tests passing (6 new: 3 `APIClientTests` for PUT
+  request/body/no-double-encode, 3 `AppStoreTests` for `applyDeviceUpdate`
+  set/clear/no-op). **Not** verified: the actual UI (needs the user) —
+  the edit screen's rendering/focus, the detail→edit popover resize
+  (460→340), and the end-to-end Save against a live backend.
+- No commit/push — branch `feat/meter-manufacturer-data-readings`, per the
+  standing practice of committing only when asked. (Note: this landed on
+  the meter-manufacturer-data branch, not a fresh one.)
+- Next: user to run the app against `cargo run -p backend`, edit a real
+  device (set label+room, then clear the label), and confirm the row
+  updates live and `GET /devices` persisted it.

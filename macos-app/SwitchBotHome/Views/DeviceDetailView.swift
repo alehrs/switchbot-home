@@ -40,8 +40,15 @@ struct DeviceDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(displayName)
-                .font(.title2.bold())
+            HStack {
+                Text(displayName)
+                    .font(.title2.bold())
+                Spacer()
+                NavigationLink(value: DeviceEditRoute(deviceID: deviceID)) {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .buttonStyle(.link)
+            }
 
             dayNavigator
 

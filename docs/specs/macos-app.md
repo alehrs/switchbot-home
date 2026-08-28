@@ -298,9 +298,9 @@ never a public host:
   visually as cached/stale) so the popover is never empty before the
   first network round-trip completes.
 - **Explicitly out of scope for now**: launch-at-login (`SMAppService`,
-  trivial to add later behind a settings toggle), notifications/alerts,
-  and an in-app editor for label/room/blacklist (kept as a manual
-  `backend/api.http`/curl workflow, exactly as today).
+  trivial to add later behind a settings toggle) and notifications/alerts.
+  In-app editing of a device's **label and room** is implemented (§13);
+  toggling `blacklisted` is still a manual `backend/api.http`/curl step.
 
 ## 12. Testing strategy
 
@@ -338,6 +338,10 @@ never a public host:
   immediately, marked stale.
 - Label a previously-"Unknown device #2" via `backend/api.http`, refresh →
   it disappears from the unnamed list, its siblings keep their numbers.
+- Tap a device → Edit → set a label and room → Save: the row updates and
+  re-groups immediately (no wait for the slow cycle); clearing the label
+  field and saving reverts it to "Unknown device #N"; saving with the
+  backend down shows an inline error and doesn't crash.
 - Sleep/wake the Mac → refresh fires immediately on wake.
 - Settings: wrong URL → "Test Connection" fails inline; correct LAN
   IP/port → app switches over live, no restart, no ATS-blocked-connection
@@ -345,9 +349,28 @@ never a public host:
 - Visual check in Light and Dark appearance; offline vs. normal menu bar
   icon tint is distinguishable at a glance.
 
-## 13. Open questions (deferred, not blocking)
+## 13. Device editing (label + room)
+
+Tapping a device row opens `DeviceDetailView` (§9a); an **Edit** button in
+that screen's header pushes `DeviceEditView` onto the same popover
+`NavigationStack` (no separate window, for the §9a reason). It has a
+`Label` and a `Room` field plus a menu to reuse an existing room name
+(rooms group verbatim per §8, so this reduces accidental "cucina" vs
+"Cucina" splits). Save issues `PUT /devices/{device_id}` via a new
+`APIClient.updateDevice(...)`, then `AppStore.applyDeviceUpdate(_:)`
+patches the matching snapshot's `Device` in place so the list re-groups
+and re-labels immediately without waiting for the slow poll cycle.
+
+Both fields are always sent as strings: an emptied field is sent as `""`,
+which the backend maps to `NULL` — so the screen never deals with the
+backend's omit-vs-clear tri-state itself. `blacklisted` is always sent as
+omitted (`nil`) from this screen.
+
+## 14. Open questions (deferred, not blocking)
 
 - Should a future per-device detail view use `GET /devices/{id}/latest`
   (currently unused) for anything, or is `/readings/latest` always enough?
-- Launch-at-login, notifications, and in-app device editing (§11) — worth
-  doing at some point, not designed here.
+- Launch-at-login and notifications (§11) — worth doing at some point, not
+  designed here.
+- Toggling `blacklisted` from the app (the `updateDevice` API method
+  already carries the parameter; only the UI toggle is missing).

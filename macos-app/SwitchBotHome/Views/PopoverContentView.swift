@@ -22,6 +22,9 @@ struct PopoverContentView: View {
                     // has been removed.
                     DeviceDetailView(deviceID: deviceID)
                 }
+                .navigationDestination(for: DeviceEditRoute.self) { route in
+                    DeviceEditView(deviceID: route.deviceID)
+                }
         }
         .onAppear(perform: onAppearRefresh)
     }

@@ -39,4 +39,47 @@ final class APIClientTests: XCTestCase {
 
         XCTAssertEqual(components.percentEncodedPath, "/devices/hci0%2Fdev_D2_2E_81_06_5C_61/readings")
     }
+
+    // MARK: - updateDevice request construction
+
+    private func makeClient(baseURL: String = "http://192.168.1.5:8090") -> APIClient {
+        APIClient(baseURLProvider: StaticBaseURL(apiBaseURL: baseURL))
+    }
+
+    func testUpdateRequestIsAPUTWithJSONContentType() throws {
+        let request = try makeClient().makeUpdateRequest(
+            deviceID: "AA:BB",
+            body: .init(label: "Camera", room: "Piano terra", blacklisted: nil)
+        )
+
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(request.url?.absoluteString, "http://192.168.1.5:8090/devices/AA:BB")
+    }
+
+    func testUpdateRequestBodySendsLabelAndRoomAndOmitsNilBlacklisted() throws {
+        let request = try makeClient().makeUpdateRequest(
+            deviceID: "AA:BB",
+            body: .init(label: "Camera", room: "", blacklisted: nil)
+        )
+
+        let json = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+
+        XCTAssertEqual(object["label"] as? String, "Camera")
+        XCTAssertEqual(object["room"] as? String, "")
+        XCTAssertNil(object["blacklisted"])
+    }
+
+    func testUpdateRequestDoesNotDoubleEncodeADeviceIDSlash() throws {
+        let request = try makeClient().makeUpdateRequest(
+            deviceID: "hci0/dev_D2_2E_81_06_5C_61",
+            body: .init(label: "Camera", room: nil, blacklisted: nil)
+        )
+
+        let components = try XCTUnwrap(
+            request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        )
+        XCTAssertEqual(components.percentEncodedPath, "/devices/hci0%2Fdev_D2_2E_81_06_5C_61")
+    }
 }

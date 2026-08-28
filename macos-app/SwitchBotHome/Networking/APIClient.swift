@@ -5,6 +5,7 @@ enum APIError: Error, LocalizedError {
     case transport(Error)
     case httpStatus(Int)
     case decoding(Error)
+    case encoding(Error)
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ enum APIError: Error, LocalizedError {
             return "Server returned HTTP \(code)"
         case .decoding(let error):
             return "Couldn't parse the server's response: \(error.localizedDescription)"
+        case .encoding(let error):
+            return "Couldn't build the request: \(error.localizedDescription)"
         }
     }
 }
@@ -62,7 +65,53 @@ struct APIClient {
         return try await get([Reading].self, url: url)
     }
 
+    /// `PUT /devices/{device_id}`. Per the backend contract, each field is
+    /// tri-state: pass `nil` to leave it unchanged, `""` to clear it to
+    /// null, a non-empty string to set it. Returns the updated device;
+    /// throws `APIError.httpStatus(404)` if the id is unknown.
+    func updateDevice(
+        deviceID: String,
+        label: String?,
+        room: String?,
+        blacklisted: Bool?
+    ) async throws -> Device {
+        let request = try makeUpdateRequest(
+            deviceID: deviceID,
+            body: UpdateDeviceBody(label: label, room: room, blacklisted: blacklisted)
+        )
+        return try await send(Device.self, request: request)
+    }
+
     // MARK: - Plumbing
+
+    /// Only `label`/`room`/`blacklisted` that are non-nil are encoded —
+    /// `JSONEncoder` omits nil optionals, which is exactly the backend's
+    /// "omit the field to leave it unchanged" semantics. Keys already
+    /// match the backend's snake-case-free names, so no `CodingKeys`.
+    struct UpdateDeviceBody: Encodable {
+        let label: String?
+        let room: String?
+        let blacklisted: Bool?
+    }
+
+    /// Built via `urlComponents(path:)` + `pathEncoded` for the same
+    /// reason `fetchReadings` is: a Linux-style `device_id` contains a
+    /// literal `/` that must stay one path segment and must not get
+    /// double-encoded (`%2F` → `%252F`).
+    func makeUpdateRequest(deviceID: String, body: UpdateDeviceBody) throws -> URLRequest {
+        guard let url = try urlComponents(path: "/devices/\(Self.pathEncoded(deviceID))").url else {
+            throw APIError.invalidBaseURL(settings.apiBaseURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            request.httpBody = try BackendCoding.encoder.encode(body)
+        } catch {
+            throw APIError.encoding(error)
+        }
+        return request
+    }
 
     /// `device_id` is opaque and, on Linux, btleplug formats it as
     /// `hci0/dev_XX_XX_XX_XX_XX_XX` — a literal `/`. Left un-encoded,
@@ -99,10 +148,17 @@ struct APIClient {
     }
 
     private func get<T: Decodable>(_ type: T.Type, url: URL) async throws -> T {
+        // A bare URL is a GET; funnel it through the same send/decode path
+        // as everything else so the status-check and error-wrapping logic
+        // lives in one place.
+        try await send(type, request: URLRequest(url: url))
+    }
+
+    private func send<T: Decodable>(_ type: T.Type, request: URLRequest) async throws -> T {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(from: url)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw APIError.transport(error)
         }
