@@ -40,14 +40,21 @@ struct DeviceEditView: View {
         return Set(rooms).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    // A plain VStack, not a `Form`: this screen is pushed onto the
+    // `MenuBarExtra(.window)` popover's NavigationStack, which sizes
+    // itself to the content's ideal size, and a `Form` has no
+    // well-defined ideal height there — it collapsed the whole screen to
+    // nothing. Every other popover view (`PopoverContentView`,
+    // `DeviceDetailView`) is a sized VStack for the same reason.
     var body: some View {
-        Form {
-            Section {
-                TextField("Label", text: $label, prompt: Text("e.g. Camera da letto"))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(save)
+        VStack(alignment: .leading, spacing: 14) {
+            labelledField("Label", text: $label, prompt: "e.g. Camera da letto")
 
-                HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Room")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
                     TextField("Room", text: $room, prompt: Text("e.g. Piano terra"))
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(save)
@@ -61,30 +68,30 @@ struct DeviceEditView: View {
                             Image(systemName: "list.bullet")
                         }
                         .menuStyle(.borderlessButton)
-                        .frame(width: 28)
+                        .fixedSize()
                     }
-                }
-
-                Text("Leave a field empty to clear it.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                if let saveError {
-                    Text(saveError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
                 }
             }
 
-            Section {
-                HStack {
-                    Button("Save", action: save)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(isSaving)
-                    if isSaving {
-                        ProgressView().controlSize(.small)
-                    }
+            Text("Leave a field empty to clear it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if let saveError {
+                Text(saveError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                if isSaving {
+                    ProgressView().controlSize(.small)
                 }
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(isSaving)
             }
         }
         .padding(20)
@@ -100,6 +107,22 @@ struct DeviceEditView: View {
                 label = device.label ?? ""
                 room = device.room ?? ""
             }
+        }
+    }
+
+    @ViewBuilder
+    private func labelledField(
+        _ title: String,
+        text: Binding<String>,
+        prompt: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField(title, text: text, prompt: Text(prompt))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
         }
     }
 

@@ -1164,3 +1164,31 @@ Entry format:
   stall, or `bluetoothctl power off` it, and watch the logs recover).
 - Also asked the user to apply the host `btusb enable_autosuspend=0` fix
   (needs root) — that removes the trigger; the watchdog is the safety net.
+- **Live-verified the watchdog end-to-end**: `bluetoothctl power off` hci1
+  on the homelab → 09:53:03 off, 09:55:03 `WARN ... adapter appears to
+  have stalled` (exactly EVENT_TIMEOUT=120s), 09:55:04 `power-cycling the
+  Bluetooth adapter adapter=hci1`, 09:55:08 `BLE scan started`, readings
+  flowing by 09:55:35. ~2.5 min, zero pod restart.
+
+## 2026-08-31 — Fix: the in-app device Edit screen rendered blank
+- User: clicking "Edit" showed an empty view — no text fields, no Save
+  button.
+- **Root cause**: `DeviceEditView` used a SwiftUI `Form`.
+  `MenuBarExtra(.window)` sizes its popover to the content's *ideal*
+  size, and a `Form` (like a bare `ScrollView` — same class of bug fixed
+  in `PopoverContentView` before) has no well-defined ideal height there,
+  so the whole screen collapsed. Reproduced with `ImageRenderer`: the
+  Form version rendered at 340×144 for a screen that should be ~340×240.
+- **Fix**: rebuilt the screen as a plain `VStack(alignment: .leading)`
+  with `.frame(width: 340)` and intrinsically-sized children — matching
+  every other popover view (`PopoverContentView`, `DeviceDetailView`).
+  Same fields/behaviour; the `Room` menu uses `.fixedSize()` instead of a
+  hard-coded width.
+- **Regression guard**: `DeviceEditViewLayoutTests` renders the view via
+  `ImageRenderer` and asserts the rendered size is over 200×300 — catches
+  a collapse without pixel-comparison flakiness. `ImageRenderer` draws
+  `TextField(.roundedBorder)` as a solid block (AppKit-control
+  limitation), so the test asserts on size only.
+- Note: `.agents/notes/macos-app/2026-08-form-in-menubarextra-popover-collapses.md`.
+- Verified: `xcodebuild build test` — 57 tests pass (1 new), 0 warnings.
+  Rebuilt Release and reinstalled `/Applications/SwitchBotHome.app`.
