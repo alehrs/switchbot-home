@@ -19,4 +19,6 @@ data:
   # bluez reports this dongle's modalias as the generic root-hub id
   # (v1D6Bp0246), not the TP-Link UB500's own 2357:0604.
   BLE_ADAPTER: "hci1"
+  # Delete readings older than N days (checked hourly). Left off: keep
+  # everything for now. Uncomment and redeploy to enable.
   # RETENTION_DAYS: "300"
