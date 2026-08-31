@@ -1192,3 +1192,24 @@ Entry format:
 - Note: `.agents/notes/macos-app/2026-08-form-in-menubarextra-popover-collapses.md`.
 - Verified: `xcodebuild build test` — 57 tests pass (1 new), 0 warnings.
   Rebuilt Release and reinstalled `/Applications/SwitchBotHome.app`.
+
+## 2026-08-31 — Fix (round 2): the Edit screen rendered in a corner
+- After the `Form`→`VStack` fix the user saw the fields, but "far
+  bottom-right, can't scroll" — content shoved into a corner of an
+  oversized popover.
+- **Cause**: `.navigationTitle("Edit")` on a pushed `NavigationStack`
+  destination inside the borderless `MenuBarExtra(.window)` popover
+  renders a misplaced title bar. `DeviceDetailView` (which renders fine)
+  uses an *in-content* title and no `.navigationTitle`.
+  `ImageRenderer.proposedSize` doesn't force the canvas, so this one
+  needed a live build to see — iterated with a locally-installed **Debug**
+  build instead of the full PR/CI/reinstall loop.
+- **Fix**: `DeviceEditView` now mirrors `DeviceDetailView` exactly —
+  in-content `Text("Edit \(name)").font(.title2.bold())`, no
+  `.navigationTitle`, `.padding(16)`, `.frame(width: 460)` (constant
+  width so the popover doesn't jump detail↔edit), trailing
+  `Spacer(minLength: 0)`. The system back button is unaffected (it comes
+  from the `navigationDestination` push).
+- Note updated; `DeviceEditViewLayoutTests` width assertion 300→400.
+- Verified: 57 tests, 0 warnings; user confirmed the live layout on the
+  Debug build. Release rebuilt + reinstalled.

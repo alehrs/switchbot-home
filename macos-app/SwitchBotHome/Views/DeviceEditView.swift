@@ -40,14 +40,21 @@ struct DeviceEditView: View {
         return Set(rooms).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    // A plain VStack, not a `Form`: this screen is pushed onto the
-    // `MenuBarExtra(.window)` popover's NavigationStack, which sizes
-    // itself to the content's ideal size, and a `Form` has no
-    // well-defined ideal height there — it collapsed the whole screen to
-    // nothing. Every other popover view (`PopoverContentView`,
-    // `DeviceDetailView`) is a sized VStack for the same reason.
+    private var deviceName: String {
+        store.snapshots.first { $0.id == deviceID }?.displayName ?? "Device"
+    }
+
+    // Mirrors `DeviceDetailView`'s shape exactly — an in-content title
+    // (no `.navigationTitle`, which renders a misplaced bar inside the
+    // borderless `MenuBarExtra(.window)` popover), `.padding(16)`,
+    // `.frame(width: 460)` so the popover width doesn't jump when
+    // navigating detail ↔ edit, and a trailing `Spacer` so short content
+    // pins to the top instead of drifting into a corner.
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit \(deviceName)")
+                .font(.title2.bold())
+
             labelledField("Label", text: $label, prompt: "e.g. Camera da letto")
 
             VStack(alignment: .leading, spacing: 4) {
@@ -85,18 +92,19 @@ struct DeviceEditView: View {
             }
 
             HStack(spacing: 8) {
-                Spacer()
                 if isSaving {
                     ProgressView().controlSize(.small)
                 }
+                Spacer()
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
                     .disabled(isSaving)
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(20)
-        .frame(width: 340)
-        .navigationTitle("Edit")
+        .padding(16)
+        .frame(width: 460, alignment: .topLeading)
         .onAppear {
             // A `MenuBarExtra(.window)` popover in an `LSUIElement` app
             // doesn't reliably give its text fields keyboard focus unless

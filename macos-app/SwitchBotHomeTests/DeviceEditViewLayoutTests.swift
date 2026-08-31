@@ -4,12 +4,10 @@ import XCTest
 @testable import SwitchBotHome
 
 /// `DeviceEditView` is pushed onto the `MenuBarExtra(.window)` popover's
-/// `NavigationStack`, which sizes itself to the content's *ideal* size.
-/// A SwiftUI `Form` has an ill-defined ideal height in that context and
-/// collapsed the whole screen (no fields, no Save button visible). This
-/// renders the view at its ideal size and asserts it actually has one —
-/// the same failure mode already seen with `ScrollView` in
-/// `PopoverContentView`.
+/// `NavigationStack`. A `Form` (and a bare `ScrollView`) has no ideal
+/// height there and collapsed the screen; `.navigationTitle` renders a
+/// misplaced bar. See
+/// `.agents/notes/macos-app/2026-08-form-in-menubarextra-popover-collapses.md`.
 @MainActor
 final class DeviceEditViewLayoutTests: XCTestCase {
     func testEditScreenHasARealRenderedSize() throws {
@@ -18,11 +16,9 @@ final class DeviceEditViewLayoutTests: XCTestCase {
             defaults: UserDefaults(suiteName: "DeviceEditViewLayoutTests")!
         )
 
-        let view = NavigationStack {
-            DeviceEditView(deviceID: "dev_TEST")
-        }
-        .environment(store)
-        .environment(settings)
+        let view = NavigationStack { DeviceEditView(deviceID: "dev_TEST") }
+            .environment(store)
+            .environment(settings)
 
         let image = try XCTUnwrap(
             ImageRenderer(content: view).nsImage,
@@ -33,10 +29,10 @@ final class DeviceEditViewLayoutTests: XCTestCase {
         attachment.name = "device-edit-rendered"
         add(attachment)
 
-        // Title + two labelled text fields + a hint line + a Save button
-        // is comfortably over 200pt tall and 300pt wide. The Form version
-        // rendered at 340×144.
+        // Title + two labelled fields + a hint + a Save button: comfortably
+        // over 200pt tall, and it takes the full ~460pt width. The Form
+        // version rendered at 340×144.
         XCTAssertGreaterThan(image.size.height, 200, "edit screen collapsed to \(image.size)")
-        XCTAssertGreaterThan(image.size.width, 300, "edit screen collapsed to \(image.size)")
+        XCTAssertGreaterThan(image.size.width, 400, "edit screen too narrow: \(image.size)")
     }
 }
