@@ -18,6 +18,8 @@ pub enum BleError {
     NoAdapter,
     #[error("no Bluetooth adapter matched BLE_ADAPTER={0:?}")]
     AdapterNotFound(String),
+    #[error("no BLE advertisement for {0:?}; the adapter appears to have stalled")]
+    Stalled(StdDuration),
     #[error(transparent)]
     Btleplug(#[from] btleplug::Error),
 }
@@ -55,15 +57,25 @@ const MAX_BACKOFF: StdDuration = StdDuration::from_secs(60);
 /// healthy", so the backoff resets instead of creeping up over a series of
 /// unrelated, widely-spaced adapter blips.
 const HEALTHY_SESSION: StdDuration = StdDuration::from_secs(30);
+/// If no advertisement event arrives for this long, treat the adapter as
+/// stalled. The meters alone broadcast every few seconds, and btleplug
+/// emits an event for every nearby BLE device's adverts too, so total
+/// silence this long means the adapter has stopped delivering — not a
+/// quiet moment.
+const EVENT_TIMEOUT: StdDuration = StdDuration::from_secs(120);
+/// Cap on the per-device MAC-resolution D-Bus round-trip.
+const MAC_LOOKUP_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 /// Scans for BLE advertisements forever, storing every SwitchBot
 /// Meter/Meter Plus reading it recognizes.
 ///
-/// btleplug's BlueZ event stream ends *silently* (no error) when the
-/// adapter is reset — USB re-enumeration, `bluetoothd` restart, adapter
-/// removed and re-added — so one `scan_session` call is not enough on its
-/// own. This supervises it: on any session end (stream closed or error)
-/// it reconnects with exponential backoff, and never returns.
+/// A single `scan_session` call is not enough: btleplug's BlueZ event
+/// stream can end silently (adapter reset, `bluetoothd` restart) *or* go
+/// silent without ending at all (a wedged Realtek dongle keeps the stream
+/// open but delivers nothing). This supervises it — on a clean stream
+/// end it reconnects; on a stall (`EVENT_TIMEOUT` of event silence) it
+/// power-cycles the adapter first — with exponential backoff, and never
+/// returns.
 ///
 /// `reading_interval` throttles stored readings *per device*.
 /// `adapter_name`, when set, selects which adapter to scan (see
@@ -75,21 +87,42 @@ pub async fn run(
 ) {
     let mut state = ScannerState::default();
     let mut backoff = INITIAL_BACKOFF;
+    // Set when a stall is seen, cleared only once a session runs long
+    // enough to have definitely worked. While set, every retry is
+    // preceded by an adapter power-cycle — so a `set_powered(true)` that
+    // didn't take gets tried again rather than leaving the adapter off.
+    let mut needs_power_cycle = false;
     loop {
+        if needs_power_cycle {
+            // An HCI reset is what actually revives a wedged dongle; a
+            // plain StartDiscovery on the next attempt would not.
+            super::adapter_power::power_cycle(adapter_name.as_deref()).await;
+        }
+
         let started = Instant::now();
-        match scan_session(
+        let outcome = scan_session(
             &storage,
             reading_interval,
             adapter_name.as_deref(),
             &mut state,
         )
-        .await
-        {
+        .await;
+
+        let stalled = matches!(outcome, Err(BleError::Stalled(_)));
+        let clean = ran_clean(started.elapsed(), stalled);
+
+        match outcome {
             Ok(()) => warn!("BLE event stream ended; reconnecting"),
+            Err(err @ BleError::Stalled(_)) => {
+                warn!(error = %err, "recovering the Bluetooth adapter");
+                needs_power_cycle = true;
+            }
             Err(err) => warn!(error = %err, "BLE scan session failed; retrying"),
         }
-        if started.elapsed() >= HEALTHY_SESSION {
+
+        if clean {
             backoff = INITIAL_BACKOFF;
+            needs_power_cycle = false;
         }
         tokio::time::sleep(backoff).await;
         backoff = next_backoff(backoff);
@@ -98,6 +131,15 @@ pub async fn run(
 
 fn next_backoff(current: StdDuration) -> StdDuration {
     (current * 2).min(MAX_BACKOFF)
+}
+
+/// Whether a finished scan session counts as a clean run: it lasted long
+/// enough to have definitely been scanning, and it did not end in a
+/// stall. A stall is reported only after `EVENT_TIMEOUT` (> `HEALTHY_SESSION`),
+/// so without the `!stalled` guard a stalled session would look "healthy"
+/// and clear the recovery flag before the power-cycle ever ran.
+fn ran_clean(elapsed: StdDuration, stalled: bool) -> bool {
+    elapsed >= HEALTHY_SESSION && !stalled
 }
 
 /// One scan attempt: pick the adapter, start scanning, and consume its
@@ -117,7 +159,16 @@ async fn scan_session(
     info!(adapter = %info, "BLE scan started");
 
     let mut events = adapter.events().await?;
-    while let Some(event) = events.next().await {
+    loop {
+        // A wedged dongle keeps this stream open but stops delivering, so
+        // a plain `.next().await` would park here forever. Bound the wait:
+        // a total silence past `EVENT_TIMEOUT` means the adapter stalled.
+        let event = match tokio::time::timeout(EVENT_TIMEOUT, events.next()).await {
+            Ok(Some(event)) => event,
+            Ok(None) => return Ok(()),
+            Err(_) => return Err(BleError::Stalled(EVENT_TIMEOUT)),
+        };
+
         // A single advertising PDU arrives as separate service-data and
         // manufacturer-data events. Both can yield a reading; the common
         // throttle/store tail below runs once on whichever produced one.
@@ -178,11 +229,21 @@ async fn scan_session(
 
         // Skip the lookup once a real MAC is already known for this device —
         // it doesn't change, and a property lookup is unnecessary overhead
-        // on every throttle-surviving reading otherwise.
+        // on every throttle-surviving reading otherwise. The lookup is a
+        // D-Bus round-trip, so cap it: a sick adapter must not wedge the
+        // whole loop here (it just means no MAC this reading, retried next).
         let mac_address = if state.mac_known.contains(&device_id) {
             None
         } else {
-            resolve_mac_address(&adapter, &id, mfr_data.as_deref()).await
+            tokio::time::timeout(
+                MAC_LOOKUP_TIMEOUT,
+                resolve_mac_address(&adapter, &id, mfr_data.as_deref()),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                warn!(device = %device_id, "MAC lookup timed out");
+                None
+            })
         };
         if mac_address.is_some() {
             state.mac_known.insert(device_id.clone());
@@ -191,8 +252,6 @@ async fn scan_session(
         store_reading(storage, &device_id, mac_address.as_deref(), parsed).await;
         state.last_stored.insert(device_id, Utc::now());
     }
-
-    Ok(())
 }
 
 /// Picks the adapter to scan. With `wanted` set, the first adapter whose
@@ -476,5 +535,20 @@ mod tests {
         );
         assert_eq!(next_backoff(StdDuration::from_secs(32)), MAX_BACKOFF);
         assert_eq!(next_backoff(MAX_BACKOFF), MAX_BACKOFF);
+    }
+
+    #[test]
+    fn a_stalled_session_is_never_treated_as_a_clean_run() {
+        // Even though it lasted well past HEALTHY_SESSION.
+        assert!(!ran_clean(EVENT_TIMEOUT, true));
+    }
+
+    #[test]
+    fn a_long_non_stalled_session_is_a_clean_run_but_a_short_one_is_not() {
+        assert!(ran_clean(HEALTHY_SESSION, false));
+        assert!(!ran_clean(
+            HEALTHY_SESSION - StdDuration::from_secs(1),
+            false
+        ));
     }
 }

@@ -2,7 +2,7 @@
 
 ## ble
 - [Some SwitchBot meters put temp/humidity (and the real MAC) in manufacturer data, not service data](ble/2026-08-meter-manufacturer-data.md) — decision, switchbot, manufacturer-data, btleplug — 2026-08-27
-- [btleplug BlueZ event stream ends silently on adapter reset; PeripheralId carries the hciN prefix](ble/2026-08-scanner-resilience.md) — decision, btleplug, bluez, scanner, adapter, device-id — 2026-08-28
+- [btleplug BlueZ scanner: the stream can hang (not just end); the RTL8761 dongle stalls; PeripheralId carries the hciN prefix](ble/2026-08-scanner-resilience.md) — decision, btleplug, bluez, scanner, adapter, realtek, autosuspend — 2026-08-28, upd 2026-08-31
 
 ## macos-app
 - [`URLComponents.path =` re-encodes an already-percent-encoded string](macos-app/2026-08-urlcomponents-path-double-encoding.md) — bugfix, urlcomponents, percent-encoding — 2026-08-25

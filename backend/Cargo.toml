@@ -17,5 +17,11 @@ thiserror = "2"
 futures = "0.3"
 uuid = "1"
 
+# BlueZ adapter power control for the scanner's stall-recovery path
+# (`ble::adapter_power`). Same version btleplug 0.12 already pins, so no
+# extra copy. Linux only — CoreBluetooth exposes no adapter power control.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluez-async = "0.8"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

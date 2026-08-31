@@ -1,3 +1,4 @@
+mod adapter_power;
 mod scanner;
 mod switchbot;
 

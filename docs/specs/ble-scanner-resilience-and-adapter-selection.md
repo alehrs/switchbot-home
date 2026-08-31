@@ -1,8 +1,9 @@
 # BLE scanner: resilience, adapter selection, adapter-independent identity
 
-Status: Implemented — `backend/src/ble/scanner.rs`, `backend/src/config.rs`,
+Status: Implemented — `backend/src/ble/scanner.rs`,
+`backend/src/ble/adapter_power.rs`, `backend/src/config.rs`,
 `backend/migrations/0003_strip_adapter_prefix.sql`
-Last updated: 2026-08-28
+Last updated: 2026-08-31
 
 ## Why
 
@@ -10,13 +11,12 @@ Diagnosed live on the homelab (k3s) after a TP-Link UB500 long-range USB
 Bluetooth adapter was added alongside the existing one:
 
 1. **The scanner died silently.** `scanner::run` was
-   `while let Some(event) = events.next().await { … }`. When BlueZ ends
-   the advertisement stream — which it does *without an error* on any
-   adapter reset (USB re-enumeration, `bluetoothd` restart, dongle
-   re-plugged) — the loop just exited, `run` returned `Ok(())`, and the
-   spawned task finished. No error, no restart; the API kept serving
-   stale data. This caused a ~26 h silent outage the moment the second
-   dongle was plugged in.
+   `while let Some(event) = events.next().await { … }`. It stops two
+   ways, both silent: the stream **ends** (`None`) on a full adapter
+   reset (`bluetoothd` restart, dongle re-plugged), *or* it **hangs** —
+   `.next()` never resolves, the stream never closes — when the dongle
+   wedges (see §Stall recovery). Either way `run` never regained control;
+   the API kept serving stale rows. Caused ~26 h silent outages, twice.
 
 2. **The adapter was not selectable.** `run` took
    `manager.adapters().into_iter().next()` with no override. With two
@@ -49,8 +49,11 @@ run(storage, reading_interval, adapter_name):
 ```
 
 - `scan_session` is the former `run` body: create manager → select
-  adapter → `start_scan` → consume `adapter.events()` until it ends or
-  errors. Returns `Ok(())` on a clean stream end (the common case).
+  adapter → `start_scan` → consume `adapter.events()`. The event wait is
+  `tokio::time::timeout(EVENT_TIMEOUT = 120 s)` — `Ok(None)` (stream
+  ended) → return `Ok(())`; elapsed (silence) → return
+  `Err(BleError::Stalled)` (see §Stall recovery). The per-reading
+  `resolve_mac_address` D-Bus call is `timeout`-guarded too (10 s).
 - `ScannerState` bundles the four per-device caches that used to be
   `run` locals (`last_stored`, `mac_known`, `switchbot_mfr_data`,
   `service_reading_seen`). Owned by `run`, borrowed `&mut` by
@@ -69,10 +72,11 @@ run(storage, reading_interval, adapter_name):
 - `select_adapter(manager, wanted)`:
   - `None` → `adapters().next()` (unchanged default).
   - `Some(name)` → first adapter whose `Central::adapter_info()` string
-    **contains** `name`. `adapter_info()` returns e.g.
-    `"hci1 (usb:v2357p0604d0002…)"`, so `name` can be an `hciN` name or a
-    USB modalias fragment (`v2357p0604`) — the latter survives `hciN`
-    renumbering across reboots and is the recommended form.
+    (`"<hciN> (<modalias>)"`) **contains** `name`, so `name` can be an
+    `hciN` name or a modalias fragment. **The modalias is not always the
+    dongle's real USB id** — on the homelab it comes through as the
+    generic root hub (`v1D6Bp0246`), not the UB500's `2357:0604` — so the
+    production configmap pins `BLE_ADAPTER=hci1`. Check the startup log.
   - No match → `warn!` every connected adapter's info string (so a
     misconfigured value is obvious in the logs), then return
     `BleError::AdapterNotFound` — which the supervisor treats as
@@ -80,6 +84,30 @@ run(storage, reading_interval, adapter_name):
   - >1 match → use the first, `warn!` about the ambiguity.
 - The chosen adapter's info string is logged at `info!` on every
   `BLE scan started`.
+
+### 2a. Stall recovery — `ble/adapter_power.rs`
+
+A Realtek RTL8761 dongle (the UB500) periodically stops delivering LE
+advertisements while still reporting `UP` / `Discovering` — most likely a
+bad resume from USB autosuspend. `hciconfig` RX counters freeze;
+`bluetoothctl scan on` finds nothing. Only an HCI reset revives it —
+`StartDiscovery` alone does not (verified by hand: `scan on` → 0 devices,
+`power off/on` → 26).
+
+- `scan_session`'s `EVENT_TIMEOUT` (120 s of event silence) →
+  `Err(BleError::Stalled)`.
+- The supervisor, on `Stalled` only, calls
+  `adapter_power::power_cycle(BLE_ADAPTER)` before the backoff sleep: a
+  BlueZ `Adapter1.Powered` false→true toggle via `bluez-async` (the same
+  `0.8` btleplug already pins; a separate short-lived `BluetoothSession`).
+  `cfg(target_os = "linux")` — a no-op stub elsewhere (CoreBluetooth has
+  no adapter power control).
+- When `BLE_ADAPTER` is set but no adapter matches, `power_cycle` does
+  **not** fall back to some other adapter — cycling the wrong dongle is
+  worse than nothing.
+- Host-side prevention (removes the trigger): disable USB autosuspend for
+  BT adapters (`options btusb enable_autosuspend=0`). See README
+  Troubleshooting.
 
 ### 3. Adapter-independent `device_id`
 
@@ -121,15 +149,20 @@ forward.
 ## Testing
 
 Pure-function unit tests in `scanner.rs` (`strip_adapter_prefix`,
-`adapter_matches`, `next_backoff`). The supervisor loop and the migration
-merge are verified manually (no async-BLE or migration-state harness
-exists — consistent with how 0002 was covered). End-to-end: on the
-homelab, unplug/replug the dongle and confirm the logs show
-`BLE event stream ended; reconnecting` → `BLE scan started` → readings
-resume within ~1 min with no pod restart.
+`adapter_matches`, `next_backoff`). The supervisor loop, the stall
+watchdog + power-cycle, and the migration merge are verified manually
+(no async-BLE or migration-state harness exists — consistent with how
+0002 was covered). The `bluez-async` power-cycle code is Linux-only, so
+it is compile-checked in a `rust:1-slim` + `libdbus-1-dev` container, not
+by the macOS `cargo` runs. End-to-end: on the homelab, let the dongle
+stall (or `bluetoothctl power off` it) and confirm the logs show
+`... adapter appears to have stalled` → `power-cycling the Bluetooth
+adapter` → `BLE scan started` → readings resume, no pod restart.
 
 ## Operational
 
-Set in the k3s configmap: `BLE_ADAPTER: "v2357p0604"` (the UB500's USB
-modalias fragment) and, finally, `READING_INTERVAL_SECONDS` (still unset
-in production — every `ADV_IND` is stored otherwise).
+k3s configmap: `BLE_ADAPTER: "hci1"` and `READING_INTERVAL_SECONDS: "30"`
+(both set as of 2026-08-31). `BLE_ADAPTER` uses the `hciN` name, not a
+modalias fragment — see §2. Host: disable USB autosuspend for BT adapters
+(`/etc/modprobe.d/btusb.conf` → `options btusb enable_autosuspend=0`) so
+the dongle stops wedging in the first place.
