@@ -1115,3 +1115,52 @@ Entry format:
   unplug/replug the dongle and confirm `BLE event stream ended;
   reconnecting` → `BLE scan started` → readings resume with no pod
   restart; confirm `GET /devices` shows 3 rows without the `hciN/` prefix.
+
+## 2026-08-31 — Diagnosed a 2-day silent outage; scanner stall watchdog + adapter power-cycle
+- **Symptom**: readings stopped Sat 2026-08-29 21:47 CEST and never
+  resumed. Pod up, 0 restarts, API responding, disk fine. Last log line
+  was a normal `reading stored`; **zero** errors/warnings/`reconnecting`
+  in 27k lines. The "self-healing" supervisor from 2026-08-28 did nothing.
+- **Root cause (hardware)**: the UB500's Realtek RTL8761 stops delivering
+  LE advertisements while still `UP` / `Discovering`. Proven on the host:
+  `hciconfig hci1` RX/`events` counters frozen (identical 5s apart),
+  `bluetoothctl scan on` → 0 devices, `INQUIRY` flag stuck.
+  `bluetoothctl power off; power on` (HCI reset, **no root needed**)
+  fixed it → `scan on` then found 26 devices. Likely trigger: bad resume
+  from USB autosuspend (`power/control=auto`, `autosuspend_delay_ms=2000`,
+  `btusb enable_autosuspend=Y`; `active_duration` ≈ 40% of wall-clock).
+- **Root cause (software)**: my earlier note/spec claim that "the BlueZ
+  stream ends silently on adapter reset" was wrong for this failure — the
+  stream doesn't end, `events.next()` just **hangs forever**. The
+  supervisor only reacts to `scan_session` *returning*, so a hang is
+  invisible to it. Corrected the note and spec.
+- **Immediate mitigation done**: restarted the pod (adapter was healthy
+  again after the power-cycle) → collecting since 08:02. PR #4 merged:
+  `READING_INTERVAL_SECONDS=30` + `BLE_ADAPTER=hci1` in the configmap
+  (deployed, verified). `hci1` not the modalias — bluez reports this
+  dongle's modalias as the generic root-hub id `v1D6Bp0246`, not
+  `2357:0604`.
+- **Fix (this branch `feat/ble-scanner-watchdog`)**:
+  - `scanner.rs`: `BleError::Stalled`; the event loop wraps
+    `events.next()` in `tokio::time::timeout(EVENT_TIMEOUT = 120s)` —
+    `None` → `Ok(())` (reconnect), elapsed → `Err(Stalled)`. The
+    supervisor, on `Stalled` only, calls `adapter_power::power_cycle`
+    before backoff. `resolve_mac_address` also `timeout`-guarded (10s).
+  - `backend/src/ble/adapter_power.rs` (new): BlueZ `Adapter1.Powered`
+    false→true via `bluez-async 0.8` (same version btleplug pins),
+    `cfg(target_os = "linux")`, no-op stub elsewhere. Does **not** fall
+    back to another adapter when `BLE_ADAPTER` doesn't match.
+  - `backend/Cargo.toml`: `[target.'cfg(target_os = "linux")'.dependencies]
+    bluez-async = "0.8"`.
+  - README: new Troubleshooting section (stall symptoms, host
+    `btusb enable_autosuspend=0` fix, manual `bluetoothctl power off/on`).
+  - Corrected `.agents/notes/ble/2026-08-scanner-resilience.md` and the
+    spec doc.
+- **Verified**: `cargo build`/`test`/`clippy -D warnings` clean on macOS
+  (41 tests); the Linux-only `bluez-async` path compile-checked +
+  clippy-checked in a `rust:1-slim` + `libdbus-1-dev` container (can't
+  build it on the Mac). **Not** verifiable locally: the actual stall
+  detection + power-cycle end-to-end — needs the homelab (let the dongle
+  stall, or `bluetoothctl power off` it, and watch the logs recover).
+- Also asked the user to apply the host `btusb enable_autosuspend=0` fix
+  (needs root) — that removes the trigger; the watchdog is the safety net.

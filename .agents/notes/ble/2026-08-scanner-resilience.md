@@ -1,46 +1,86 @@
 ---
 date: 2026-08-28
+updated: 2026-08-31
 type: decision
-tags: [ble, btleplug, bluez, scanner, adapter, device-id, resilience]
+tags: [ble, btleplug, bluez, scanner, adapter, device-id, resilience, realtek, autosuspend]
 files:
   - backend/src/ble/scanner.rs
+  - backend/src/ble/adapter_power.rs
   - backend/src/config.rs
   - backend/migrations/0003_strip_adapter_prefix.sql
 ---
 
-# btleplug BlueZ: the event stream ends silently on adapter reset; PeripheralId carries the hciN prefix
+# btleplug BlueZ scanner: the stream can hang (not just end); the RTL8761 dongle stalls; PeripheralId carries the hciN prefix
 
-**Context.** A TP-Link UB500 was added to the homelab next to the existing
-dongle. The collector then stored nothing for ~26 h with no error logged.
+**Context.** A TP-Link UB500 was added to the homelab. The collector then
+stored nothing for ~26 h at a time, with no error logged, more than once.
 
-## The event stream dies without an error
+## The scanner stops in two different ways — and only one ends the stream
 
 `adapter.events()` on btleplug's BlueZ backend is a D-Bus signal stream.
-When the adapter is reset — USB re-enumeration, `bluetoothd` restart,
-dongle re-plugged, `hciN` renumbered — the stream simply **ends**
-(`.next()` → `None`). The old `while let Some(event) = events.next().await`
-loop then exited, `run` returned `Ok(())`, and the spawned task finished.
-No error, no panic, no restart. The HTTP API kept serving stale rows, so
-from the outside it looked alive.
 
-**Fix.** `scanner::run` is now a supervisor loop around `scan_session`
-(the former body). Any return — clean stream end *or* error — is logged
-and retried with exponential backoff (1 s → 60 s cap; reset to 1 s after
-a session that lasted ≥30 s). It never returns; `main.rs` dropped the
-`if let Err(...)` wrapper. The per-device caches live in a `ScannerState`
-owned by `run` so a reconnect doesn't re-resolve every MAC or dump a
-burst of unthrottled readings.
+1. **It ends** (`.next()` → `None`) on a full adapter reset — `bluetoothd`
+   restart, dongle re-plugged / `hciN` renumbered. The old
+   `while let Some(event) = events.next().await` loop then exited, `run`
+   returned `Ok(())`, the spawned task finished. Silent.
+2. **It hangs** (`.next()` never resolves, stream never closes) when the
+   dongle *wedges* — see below. This is what actually happened on the
+   homelab: last log line was a normal `reading stored`, then nothing for
+   2 days, no error. A supervisor that only reacts to `scan_session`
+   *returning* never regains control here.
+
+*(The 2026-08-28 version of this note claimed only case 1. Case 2 is the
+common one in practice.)*
+
+**Fix.** `scanner::run` is a supervisor loop around `scan_session`, with
+exponential backoff (1 s → 60 s; reset after a ≥30 s session). Per-device
+caches live in a `ScannerState` owned by `run` so a reconnect doesn't
+re-resolve every MAC or dump a burst of unthrottled readings.
+- Case 1: `scan_session` returns `Ok(())` → reconnect.
+- Case 2: the event loop wraps `events.next()` in
+  `tokio::time::timeout(EVENT_TIMEOUT = 120 s)`; total silence that long
+  → `Err(BleError::Stalled)`. The supervisor then **power-cycles the
+  adapter** (`backend/src/ble/adapter_power.rs`: BlueZ `Adapter1.Powered`
+  false→true via `bluez-async` — same version btleplug pins,
+  `cfg(target_os = "linux")` only) before retrying. A plain
+  `StartDiscovery` on the next attempt does **not** revive a wedged
+  dongle; only the power toggle (an HCI reset) does — proven by hand
+  (`bluetoothctl scan on` found 0 devices, `power off/on` then found 26).
+- The per-reading `resolve_mac_address` D-Bus call is also
+  `timeout`-guarded (10 s) so it can't wedge the loop.
+
+## The RTL8761 dongle stalls (root cause of the 2-day outage)
+
+The UB500's Realtek RTL8761 stops delivering LE advertisements while
+`hciconfig` still shows `UP RUNNING` and BlueZ still shows
+`Discovering: yes`. Tells: `hciconfig hciX` `RX bytes` / `events`
+counters **frozen**; `bluetoothctl scan on` finds nothing; `INQUIRY`
+flag stuck.
+
+Most likely a bad **resume from USB autosuspend**: the dongle had
+`power/control=auto`, `autosuspend_delay_ms=2000`, `btusb
+enable_autosuspend=Y`, and `active_duration` ≈ 40 % of wall-clock.
+Host-side fix (removes the trigger, needs root):
+`echo 'options btusb enable_autosuspend=0' > /etc/modprobe.d/btusb.conf`
+then reload `btusb`. Documented in README Troubleshooting.
+
+Recovery that works without root: `bluetoothctl power off; power on`.
 
 ## Adapter selection
 
 `manager.adapters().into_iter().next()` is **not stable** with >1 adapter
 (BlueZ object order isn't guaranteed). Added `BLE_ADAPTER`: substring
-match against `Central::adapter_info()`, which returns
-`"hci1 (usb:v2357p0604d0002…)"`. So the value can be `hci1` **or** a USB
-modalias fragment like `v2357p0604` — prefer the modalias, it survives
-`hciN` renumbering across reboots. Unset → first-found (old behaviour).
-Chosen adapter is logged at startup; no match → logs all connected
-adapters then errors (retryable — dongle may appear later).
+match (`info.contains(wanted)`) against `Central::adapter_info()`, which
+is `"<hciN> (<modalias>)"`. So the value can be an `hciN` name **or** a
+modalias fragment. Unset → first-found. Chosen adapter logged at startup;
+no match → logs all connected adapters then errors (retryable).
+
+**Gotcha — the modalias is not always the dongle's real USB id.** On the
+homelab, `adapter_info()` for the UB500 is `"hci1 (usb:v1D6Bp0246d0552)"`
+— `1d6b:0246` is the generic Linux Foundation root hub, **not** the
+UB500's own `2357:0604`. So `BLE_ADAPTER=v2357p0604` would not match
+there; the production configmap pins `BLE_ADAPTER=hci1`. Check the actual
+startup log line before choosing a value.
 
 ## device_id carried the adapter name
 

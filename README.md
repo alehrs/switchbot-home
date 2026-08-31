@@ -102,12 +102,13 @@ permission to your terminal app once: System Settings → Privacy &
 Security → Bluetooth → add your terminal. Without it, `btleplug` silently
 finds no devices.
 
-The scanner supervises itself: BlueZ ends the advertisement stream
-without an error whenever the adapter is reset (USB re-plug, `bluetoothd`
-restart), so it reconnects automatically with backoff rather than going
-quiet until the process is restarted. With multiple adapters, pin one
-with `BLE_ADAPTER` (above) — otherwise the choice is not stable across
-restarts.
+The scanner supervises itself: if the advertisement stream ends (adapter
+reset, `bluetoothd` restart) it reconnects with backoff; if it goes
+*silent* for 2 minutes without ending — a wedged dongle — it power-cycles
+the adapter (a BlueZ `Powered` off/on, i.e. an HCI reset) and retries.
+Either way it recovers on its own rather than going quiet until the
+process is restarted. With multiple adapters, pin one with `BLE_ADAPTER`
+(above) — otherwise the choice is not stable across restarts.
 
 To debug the parser against a real device, run with debug logging enabled:
 
@@ -185,3 +186,36 @@ The 26 unit tests (`macos-app/SwitchBotHomeTests/`) cover the pure logic
 need no backend or network access. UI/networking behavior (does the
 popover render correctly, does it recover after the backend restarts) can
 only be verified by actually running the app against a live backend.
+
+## Troubleshooting
+
+### Readings stop and don't come back
+
+Symptom: `GET /readings/latest` keeps returning the same old rows, the
+process is up and the API responds, and `RUST_LOG=info,backend=debug`
+shows no new `reading stored` lines.
+
+Most often this is the **USB Bluetooth dongle silently stalling** — it
+still reports `UP` / `Discovering` to BlueZ but stops delivering
+advertisements. Realtek RTL8761 chips (e.g. the TP-Link UB500) are prone
+to this, usually a bad resume from USB autosuspend. Confirm with:
+
+```
+# counters should climb continuously while scanning; frozen == stalled
+hciconfig hci1 | grep 'RX bytes'; sleep 3; hciconfig hci1 | grep 'RX bytes'
+# a healthy adapter finds several devices in a busy home
+bluetoothctl --timeout 15 scan on
+```
+
+The backend now detects this after 2 minutes of silence and recovers by
+power-cycling the adapter (`bluetoothctl power off/on` equivalent, over
+D-Bus). To stop it happening in the first place, disable USB autosuspend
+for Bluetooth adapters on the host:
+
+```
+echo 'options btusb enable_autosuspend=0' | sudo tee /etc/modprobe.d/btusb.conf
+sudo modprobe -r btusb && sudo modprobe btusb   # or reboot
+```
+
+Manual one-off recovery without touching the host config:
+`bluetoothctl power off` then `bluetoothctl power on` (no root needed).
