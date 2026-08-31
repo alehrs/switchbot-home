@@ -92,10 +92,10 @@ struct DeviceEditView: View {
             }
 
             HStack(spacing: 8) {
+                Spacer()
                 if isSaving {
                     ProgressView().controlSize(.small)
                 }
-                Spacer()
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
                     .disabled(isSaving)
