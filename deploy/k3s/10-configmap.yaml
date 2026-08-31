@@ -9,12 +9,14 @@ data:
   # the maintainer's own homelab node :3000 is already taken by Grafana
   # (confirmed via `ss -tln` before the first real deploy, not guessed).
   BIND_ADDRESS: "0.0.0.0:8090"
-  # Uncomment to enable (see README.md for what they do), then:
-  #   kubectl apply -f deploy/k3s/configmap.yaml
-  #   kubectl rollout restart deployment/switchbot-home-backend -n switchbot-home
-  # READING_INTERVAL_SECONDS: "30"
+  # At most one stored reading per device per 30s. Without this every
+  # ADV_IND (a few per second per meter) is a row — ~14k rows in the
+  # first day on this deploy.
+  READING_INTERVAL_SECONDS: "30"
+  # Pin the adapter. This node has two Realtek dongles; btleplug's
+  # first-found pick is not stable across restarts. Matched as a substring
+  # of the adapter info string — "hci1" and not the USB modalias, because
+  # bluez reports this dongle's modalias as the generic root-hub id
+  # (v1D6Bp0246), not the TP-Link UB500's own 2357:0604.
+  BLE_ADAPTER: "hci1"
   # RETENTION_DAYS: "300"
-  # Which Bluetooth adapter to scan (substring of the adapter info string:
-  # an hciN name or a USB modalias fragment). Needed only with >1 adapter.
-  # The maintainer's node has a TP-Link UB500 (USB 2357:0604) for range.
-  # BLE_ADAPTER: "v2357p0604"
