@@ -1213,3 +1213,10 @@ Entry format:
 - Note updated; `DeviceEditViewLayoutTests` width assertion 300→400.
 - Verified: 57 tests, 0 warnings; user confirmed the live layout on the
   Debug build. Release rebuilt + reinstalled.
+
+## 2026-09-21 — Restore BLE collection and harden recovery
+- Diagnosed the stalled collection on multivac: the configured `hci1` adapter no longer matched the USB dongle, which was enumerated as `hci2`, and the previous recovery path leaked BlueZ D-Bus connections until it reached the per-UID connection limit.
+- Added a stable USB adapter selector (`usb:2357:0604`) and configured it for the deployment, so a dongle that changes `hci` number is selected by its USB vendor/product identity.
+- Reworked BLE adapter power recovery to keep one D-Bus session for the scanner lifetime and reconnect if its dispatch task terminates.
+- Restored the live deployment with its current `hci2` adapter and verified that fresh readings are being stored; the permanent source change is tracked in PR #8.
+- Followed up on the PR review by removing the unused Linux re-export and detecting a completed D-Bus dispatch task before reusing its controller.

@@ -11,7 +11,7 @@
 //! No-op on non-Linux: CoreBluetooth exposes no adapter power control.
 
 #[cfg(target_os = "linux")]
-pub use imp::{PowerCycler, power_cycle};
+pub use imp::power_cycle;
 
 #[cfg(not(target_os = "linux"))]
 pub struct PowerCycler;
@@ -65,6 +65,8 @@ mod imp {
     /// `None` targets the first adapter. Failures are logged, not
     /// propagated — this is a best-effort recovery step.
     pub async fn power_cycle(cycler: &mut Option<PowerCycler>, adapter_hint: Option<&str>) {
+        reset_finished_cycler(cycler);
+
         if cycler.is_none() {
             match PowerCycler::new().await {
                 Ok(new_cycler) => *cycler = Some(new_cycler),
@@ -85,6 +87,23 @@ mod imp {
         .await
         {
             warn!(error = %err, "Bluetooth adapter power-cycle failed");
+        }
+
+        // A D-Bus dispatch task can terminate independently of this
+        // request. Do not retain its dead session: the next recovery
+        // attempt must establish a fresh connection.
+        reset_finished_cycler(cycler);
+    }
+
+    fn reset_finished_cycler(cycler: &mut Option<PowerCycler>) {
+        if cycler
+            .as_ref()
+            .is_some_and(|existing| existing.dispatch_task.is_finished())
+        {
+            warn!(
+                "Bluetooth adapter power-cycle D-Bus task ended; reconnecting on the next attempt"
+            );
+            *cycler = None;
         }
     }
 
