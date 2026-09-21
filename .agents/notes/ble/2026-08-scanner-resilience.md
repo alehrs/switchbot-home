@@ -1,6 +1,6 @@
 ---
 date: 2026-08-28
-updated: 2026-08-31
+updated: 2026-09-21
 type: decision
 tags: [ble, btleplug, bluez, scanner, adapter, device-id, resilience, realtek, autosuspend]
 files:
@@ -81,6 +81,29 @@ homelab, `adapter_info()` for the UB500 is `"hci1 (usb:v1D6Bp0246d0552)"`
 UB500's own `2357:0604`. So `BLE_ADAPTER=v2357p0604` would not match
 there; the production configmap pins `BLE_ADAPTER=hci1`. Check the actual
 startup log line before choosing a value.
+
+**Update 2026-09-21 — do not create one power-cycle D-Bus session per
+recovery.** The deployed watchdog created a `bluez-async::BluetoothSession`,
+spawned its dispatch future, and aborted it after each `Powered` off/on toggle.
+After the collector stalled, the pod accumulated 280 open socket FDs and BlueZ
+started returning `The maximum number of active connections for UID 0 has been
+reached`; recovery could no longer run. `PowerCycler` now keeps one session and
+dispatch task for the scanner lifetime. The obvious short-lived-session approach
+is wrong here: `BluetoothSession::new` has already spawned its D-Bus driver, so
+aborting the wrapper task merely detaches that driver instead of closing the
+system-bus connection.
+
+A long-lived session still cannot be trusted after its dispatch task has
+finished (for example, after a system-bus disconnect). `power_cycle` therefore
+checks `dispatch_task.is_finished()` before reuse and again after a toggle,
+then drops the `PowerCycler`; the next recovery creates a new session. Do not
+reset it for every `toggle` error: an adapter that is temporarily unavailable
+does not necessarily mean that its D-Bus connection is dead.
+
+The same outage showed that a physical UB500 may change from `hci1` to `hci2`.
+Its BlueZ modalias is the parent hub, so `BLE_ADAPTER=usb:2357:0604` reads the
+actual `PRODUCT=2357/604/...` from `/sys/class/bluetooth/hciN/device/uevent`
+instead; this survives the name change.
 
 ## device_id carried the adapter name
 

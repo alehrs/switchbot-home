@@ -89,11 +89,11 @@ Configuration is via environment variables, all optional:
   automatically (checked hourly). E.g. `300` keeps roughly the last 300
   days. Default (unset): readings are never deleted.
 - `BLE_ADAPTER` — which Bluetooth adapter to scan on, when the host has
-  more than one. Matched as a substring of the adapter's info string
-  (e.g. `hci1 (usb:v2357p0604d…)`), so either an `hciN` name (`hci1`) or
-  a USB modalias fragment (`v2357p0604`) works; the modalias form is
-  recommended since it survives `hciN` renumbering across reboots.
-  Default (unset): the first adapter found.
+  more than one. An `hciN` name (`hci1`) or a BlueZ modalias fragment
+  still matches the adapter-info string. On Linux, `usb:vvvv:pppp` (for
+  example `usb:2357:0604`) instead matches the physical USB device from
+  sysfs and survives `hciN` renumbering, even when BlueZ reports the
+  parent hub's modalias. Default (unset): the first adapter found.
 
 ### BLE scanning
 
