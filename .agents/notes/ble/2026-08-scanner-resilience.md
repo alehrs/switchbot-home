@@ -93,6 +93,13 @@ is wrong here: `BluetoothSession::new` has already spawned its D-Bus driver, so
 aborting the wrapper task merely detaches that driver instead of closing the
 system-bus connection.
 
+A long-lived session still cannot be trusted after its dispatch task has
+finished (for example, after a system-bus disconnect). `power_cycle` therefore
+checks `dispatch_task.is_finished()` before reuse and again after a toggle,
+then drops the `PowerCycler`; the next recovery creates a new session. Do not
+reset it for every `toggle` error: an adapter that is temporarily unavailable
+does not necessarily mean that its D-Bus connection is dead.
+
 The same outage showed that a physical UB500 may change from `hci1` to `hci2`.
 Its BlueZ modalias is the parent hub, so `BLE_ADAPTER=usb:2357:0604` reads the
 actual `PRODUCT=2357/604/...` from `/sys/class/bluetooth/hciN/device/uevent`
