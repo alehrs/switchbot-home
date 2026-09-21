@@ -11,37 +11,81 @@
 //! No-op on non-Linux: CoreBluetooth exposes no adapter power control.
 
 #[cfg(target_os = "linux")]
-pub use imp::power_cycle;
+pub use imp::{PowerCycler, power_cycle};
 
 #[cfg(not(target_os = "linux"))]
-pub async fn power_cycle(_adapter_hint: Option<&str>) {}
+pub struct PowerCycler;
+
+#[cfg(not(target_os = "linux"))]
+pub async fn power_cycle(_cycler: &mut Option<PowerCycler>, _adapter_hint: Option<&str>) {}
 
 #[cfg(target_os = "linux")]
 mod imp {
     use std::time::Duration;
 
     use bluez_async::{BluetoothError, BluetoothSession};
+    use tokio::task::JoinHandle;
     use tracing::{info, warn};
 
-    /// Toggle the target adapter's `Powered` off → on. `adapter_hint` is
-    /// the `BLE_ADAPTER` value (an `hciN` name or a modalias fragment),
-    /// matched the same way `scanner::adapter_matches` selects the adapter;
-    /// `None` targets the first adapter. Failures are logged, not
-    /// propagated — this is a best-effort recovery step.
-    pub async fn power_cycle(adapter_hint: Option<&str>) {
-        if let Err(err) = run(adapter_hint).await {
-            warn!(error = %err, "Bluetooth adapter power-cycle failed");
+    /// A single, long-lived D-Bus session for recovery power-cycles.
+    ///
+    /// A session's dispatch future must stay alive for as long as the
+    /// session is used. More importantly, creating one for every recovery
+    /// attempt leaks system-bus connections when the adapter remains sick:
+    /// BlueZ eventually rejects the process with its per-UID connection
+    /// limit. Keep exactly one for the scanner's lifetime instead.
+    pub struct PowerCycler {
+        session: BluetoothSession,
+        dispatch_task: JoinHandle<()>,
+    }
+
+    impl PowerCycler {
+        async fn new() -> Result<Self, BluetoothError> {
+            let (dispatch, session) = BluetoothSession::new().await?;
+            let dispatch_task = tokio::spawn(async move {
+                if let Err(err) = dispatch.await {
+                    warn!(error = %err, "Bluetooth adapter power-cycle D-Bus task ended");
+                }
+            });
+            Ok(Self {
+                session,
+                dispatch_task,
+            })
         }
     }
 
-    async fn run(adapter_hint: Option<&str>) -> Result<(), BluetoothError> {
-        // `BluetoothSession::new` hands back a background dispatch task to
-        // run for the session's lifetime; abort it once we're done.
-        let (task, session) = BluetoothSession::new().await?;
-        let task = tokio::spawn(task);
-        let result = toggle(&session, adapter_hint).await;
-        task.abort();
-        result
+    impl Drop for PowerCycler {
+        fn drop(&mut self) {
+            self.dispatch_task.abort();
+        }
+    }
+
+    /// Toggle the target adapter's `Powered` off → on. The session is
+    /// created only once, then reused for all later recovery attempts.
+    /// `None` targets the first adapter. Failures are logged, not
+    /// propagated — this is a best-effort recovery step.
+    pub async fn power_cycle(cycler: &mut Option<PowerCycler>, adapter_hint: Option<&str>) {
+        if cycler.is_none() {
+            match PowerCycler::new().await {
+                Ok(new_cycler) => *cycler = Some(new_cycler),
+                Err(err) => {
+                    warn!(error = %err, "Bluetooth adapter power-cycle connection failed");
+                    return;
+                }
+            }
+        }
+
+        if let Err(err) = toggle(
+            &cycler
+                .as_ref()
+                .expect("cycler was just initialized")
+                .session,
+            adapter_hint,
+        )
+        .await
+        {
+            warn!(error = %err, "Bluetooth adapter power-cycle failed");
+        }
     }
 
     async fn toggle(
@@ -53,9 +97,12 @@ mod imp {
             // Never fall back to "some other adapter" when a specific one
             // was asked for and isn't present — power-cycling the wrong
             // dongle would be worse than doing nothing.
-            Some(hint) => adapters
-                .iter()
-                .find(|a| format!("{} ({})", a.id, a.modalias).contains(hint)),
+            Some(hint) => adapters.iter().find(|adapter| {
+                super::super::scanner::adapter_matches(
+                    &format!("{} ({})", adapter.id, adapter.modalias),
+                    hint,
+                )
+            }),
             None => adapters.first(),
         };
         let Some(target) = target else {

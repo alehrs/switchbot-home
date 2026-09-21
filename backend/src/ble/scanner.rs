@@ -92,11 +92,12 @@ pub async fn run(
     // preceded by an adapter power-cycle — so a `set_powered(true)` that
     // didn't take gets tried again rather than leaving the adapter off.
     let mut needs_power_cycle = false;
+    let mut power_cycler = None;
     loop {
         if needs_power_cycle {
             // An HCI reset is what actually revives a wedged dongle; a
             // plain StartDiscovery on the next attempt would not.
-            super::adapter_power::power_cycle(adapter_name.as_deref()).await;
+            super::adapter_power::power_cycle(&mut power_cycler, adapter_name.as_deref()).await;
         }
 
         let started = Instant::now();
@@ -256,7 +257,8 @@ async fn scan_session(
 
 /// Picks the adapter to scan. With `wanted` set, the first adapter whose
 /// `Central::adapter_info` string contains it (an `hciN` name or a USB
-/// modalias fragment both work); without, the first adapter found.
+/// modalias fragment), or whose Linux USB product matches it; without, the
+/// first adapter found.
 async fn select_adapter(manager: &Manager, wanted: Option<&str>) -> Result<Adapter, BleError> {
     let adapters = manager.adapters().await?;
     let Some(wanted) = wanted else {
@@ -295,12 +297,52 @@ async fn select_adapter(manager: &Manager, wanted: Option<&str>) -> Result<Adapt
 }
 
 /// Whether an adapter whose `Central::adapter_info` string is `info`
-/// should be used for the configured `BLE_ADAPTER` value `wanted`. A
-/// plain substring test: `info` looks like `"hci1 (usb:v2357p0604d…)"`,
-/// so `wanted` can be an `hciN` name or a USB modalias fragment (the
-/// latter survives `hciN` renumbering across reboots).
-fn adapter_matches(info: &str, wanted: &str) -> bool {
+/// should be used for `BLE_ADAPTER`. `hciN` names and BlueZ modalias
+/// fragments remain supported. `usb:vvvv:pppp` reads the adapter's USB
+/// product from sysfs, so it remains stable even when BlueZ exposes the
+/// parent USB hub's modalias or renumbers the HCI device.
+pub(crate) fn adapter_matches(info: &str, wanted: &str) -> bool {
     info.contains(wanted)
+        || adapter_usb_product(info)
+            .as_deref()
+            .is_some_and(|product| usb_product_matches(product, wanted))
+}
+
+fn adapter_usb_product(info: &str) -> Option<String> {
+    let adapter = info.split_whitespace().next()?;
+    let uevent =
+        std::fs::read_to_string(format!("/sys/class/bluetooth/{adapter}/device/uevent")).ok()?;
+    uevent
+        .lines()
+        .find_map(|line| line.strip_prefix("PRODUCT=").map(str::to_owned))
+}
+
+fn usb_product_matches(product: &str, wanted: &str) -> bool {
+    let Some(wanted) = wanted.strip_prefix("usb:") else {
+        return false;
+    };
+    let Some((vendor, product_id)) = wanted.split_once(':') else {
+        return false;
+    };
+    let Some((actual_vendor, rest)) = product.split_once('/') else {
+        return false;
+    };
+    let Some((actual_product, _)) = rest.split_once('/') else {
+        return false;
+    };
+    match (
+        (parse_usb_hex(actual_vendor), parse_usb_hex(actual_product)),
+        (parse_usb_hex(vendor), parse_usb_hex(product_id)),
+    ) {
+        ((Some(actual_vendor), Some(actual_product)), (Some(vendor), Some(product_id))) => {
+            actual_vendor == vendor && actual_product == product_id
+        }
+        _ => false,
+    }
+}
+
+fn parse_usb_hex(value: &str) -> Option<u16> {
+    u16::from_str_radix(value, 16).ok()
 }
 
 /// btleplug's BlueZ `PeripheralId` stringifies as `hciN/dev_AA_BB_…`, so
@@ -525,6 +567,19 @@ mod tests {
         assert!(adapter_matches(info, "hci1"));
         assert!(adapter_matches(info, "v2357p0604"));
         assert!(!adapter_matches("hci0 (usb:v0BDAp8771d0200)", "hci1"));
+    }
+
+    #[test]
+    fn usb_product_selector_matches_the_stable_vendor_and_product_ids() {
+        assert!(usb_product_matches("2357/604/200", "usb:2357:0604"));
+        assert!(usb_product_matches("2357/604/200", "usb:2357:604"));
+        assert!(!usb_product_matches("13d3/3416/200", "usb:2357:0604"));
+        assert!(!usb_product_matches("2357/604/200", "hci2"));
+        assert!(!usb_product_matches("not-a-product", "usb:2357:0604"));
+        assert!(!usb_product_matches(
+            "nope/also-nope/200",
+            "usb:bad:also-bad"
+        ));
     }
 
     #[test]

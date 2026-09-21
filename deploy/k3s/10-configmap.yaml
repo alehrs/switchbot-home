@@ -13,12 +13,10 @@ data:
   # ADV_IND (a few per second per meter) is a row — ~14k rows in the
   # first day on this deploy.
   READING_INTERVAL_SECONDS: "30"
-  # Pin the adapter. This node has two Realtek dongles; btleplug's
-  # first-found pick is not stable across restarts. Matched as a substring
-  # of the adapter info string — "hci1" and not the USB modalias, because
-  # bluez reports this dongle's modalias as the generic root-hub id
-  # (v1D6Bp0246), not the TP-Link UB500's own 2357:0604.
-  BLE_ADAPTER: "hci1"
+  # Pin the TP-Link UB500 by its physical USB vendor/product IDs. Its hciN
+  # number can change (it is currently hci2), and BlueZ reports its
+  # modalias as the generic root hub rather than the dongle's own ID.
+  BLE_ADAPTER: "usb:2357:0604"
   # Delete readings older than N days (checked hourly). Left off: keep
   # everything for now. Uncomment and redeploy to enable.
   # RETENTION_DAYS: "300"

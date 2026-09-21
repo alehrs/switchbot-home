@@ -73,10 +73,11 @@ run(storage, reading_interval, adapter_name):
   - `None` → `adapters().next()` (unchanged default).
   - `Some(name)` → first adapter whose `Central::adapter_info()` string
     (`"<hciN> (<modalias>)"`) **contains** `name`, so `name` can be an
-    `hciN` name or a modalias fragment. **The modalias is not always the
-    dongle's real USB id** — on the homelab it comes through as the
-    generic root hub (`v1D6Bp0246`), not the UB500's `2357:0604` — so the
-    production configmap pins `BLE_ADAPTER=hci1`. Check the startup log.
+    `hciN` name or a modalias fragment. On Linux, `usb:vvvv:pppp` is also
+    supported: it reads `PRODUCT=vendor/product/revision` from the adapter's
+    sysfs `uevent`. This is the production selector for the UB500
+    (`usb:2357:0604`): BlueZ reports its parent root hub (`v1D6Bp0246`) as
+    the modalias, and the `hciN` number can change after a USB reconnect.
   - No match → `warn!` every connected adapter's info string (so a
     misconfigured value is obvious in the logs), then return
     `BleError::AdapterNotFound` — which the supervisor treats as
@@ -98,10 +99,13 @@ bad resume from USB autosuspend. `hciconfig` RX counters freeze;
   `Err(BleError::Stalled)`.
 - The supervisor, on `Stalled` only, calls
   `adapter_power::power_cycle(BLE_ADAPTER)` before the backoff sleep: a
-  BlueZ `Adapter1.Powered` false→true toggle via `bluez-async` (the same
-  `0.8` btleplug already pins; a separate short-lived `BluetoothSession`).
-  `cfg(target_os = "linux")` — a no-op stub elsewhere (CoreBluetooth has
-  no adapter power control).
+  BlueZ `Adapter1.Powered` false→true toggle via one long-lived
+  `bluez-async` `BluetoothSession`. It must not create a new session for
+  each recovery: that leaks D-Bus sockets until BlueZ returns `The maximum
+  number of active connections for UID 0 has been reached`: the crate creates
+  its D-Bus driver before returning, so aborting an outer wrapper task detaches
+  it rather than closing the connection. `cfg(target_os = "linux")` — a no-op
+  stub elsewhere (CoreBluetooth has no adapter power control).
 - When `BLE_ADAPTER` is set but no adapter matches, `power_cycle` does
   **not** fall back to some other adapter — cycling the wrong dongle is
   worse than nothing.
@@ -161,8 +165,7 @@ adapter` → `BLE scan started` → readings resume, no pod restart.
 
 ## Operational
 
-k3s configmap: `BLE_ADAPTER: "hci1"` and `READING_INTERVAL_SECONDS: "30"`
-(both set as of 2026-08-31). `BLE_ADAPTER` uses the `hciN` name, not a
-modalias fragment — see §2. Host: disable USB autosuspend for BT adapters
+k3s configmap: `BLE_ADAPTER: "usb:2357:0604"` and
+`READING_INTERVAL_SECONDS: "30"`. Host: disable USB autosuspend for BT adapters
 (`/etc/modprobe.d/btusb.conf` → `options btusb enable_autosuspend=0`) so
 the dongle stops wedging in the first place.
