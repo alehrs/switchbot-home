@@ -1,9 +1,10 @@
 # BLE scanner: resilience, adapter selection, adapter-independent identity
 
 Status: Implemented — `backend/src/ble/scanner.rs`,
-`backend/src/ble/adapter_power.rs`, `backend/src/config.rs`,
+`backend/src/ble/adapter_power.rs`, `backend/src/health.rs`,
+`backend/src/api/health.rs`, `backend/src/config.rs`,
 `backend/migrations/0003_strip_adapter_prefix.sql`
-Last updated: 2026-08-31
+Last updated: 2026-10-12
 
 ## Why
 
@@ -36,19 +37,23 @@ Bluetooth adapter was added alongside the existing one:
 `scanner::run` is now a supervisor that never returns:
 
 ```
-run(storage, reading_interval, adapter_name):
+run(storage, health, reading_interval, adapter_name):
     state = ScannerState::default()          # caches, kept across reconnects
+    manager = ManagerSlot::new()             # ONE btleplug Manager (see §1a)
     backoff = 1s
     loop:
         started = now
-        result = scan_session(&storage, reading_interval, adapter_name, &mut state)
+        result = scan_session(manager.get_or_create(), &storage, &health,
+                              reading_interval, adapter_name, &mut state)
+        manager.record_attempt(result is a dead-D-Bus-connection error)
+        health.record_session_ended(result)
         warn!(...)                            # stream ended, or errored
         if started.elapsed() >= 30s: backoff = 1s   # the session was healthy
         sleep(backoff)
         backoff = min(backoff * 2, 60s)
 ```
 
-- `scan_session` is the former `run` body: create manager → select
+- `scan_session` is the former `run` body: (manager is passed in) → select
   adapter → `start_scan` → consume `adapter.events()`. The event wait is
   `tokio::time::timeout(EVENT_TIMEOUT = 120 s)` — `Ok(None)` (stream
   ended) → return `Ok(())`; elapsed (silence) → return
@@ -64,6 +69,73 @@ run(storage, reading_interval, adapter_name):
   later then just works with no restart — strictly better than the old
   silent give-up. `main.rs` no longer wraps the call in
   `if let Err(...)` (run returns `()`).
+
+### 1a. One btleplug `Manager` for the process lifetime
+
+**Bug (found 2026-10-12, a 2-week outage).** `scan_session` originally called
+`btleplug::platform::Manager::new()` on every attempt. On BlueZ, btleplug 0.12
+implements that as `let (_, session) = BluetoothSession::new()`: the D-Bus
+driver task is spawned inside `bluez-async` and its handle is discarded, so
+**dropping the `Manager` does not close its system-bus connection**. Every
+retry leaked one connection. dbus-daemon allows 256 per UID (shared by all root
+processes on the host); a non-matching `BLE_ADAPTER` retried every 60 s
+exhausted it in about 4 h, after which every attempt failed with `The maximum
+number of active connections for UID 0 has been reached` and only a process
+restart recovered. Measured in a Linux container: 10 × `Manager::new()` + drop
+raised the process's socket count from 3 to 13; 300 `adapters()` calls on one
+`Manager` left it constant.
+
+**Fix.** `run` owns a `ManagerSlot`: the `Manager` is created lazily on the
+first attempt and reused for every later one — stream end, stall,
+`AdapterNotFound`, `start_scan` errors. It is rebuilt only when its own
+connection is dead, because rebuilding a *live* one is exactly the leak.
+
+- btleplug maps every BlueZ D-Bus failure to
+  `Error::Other(BluetoothError::DbusError(_))`, so a dead connection can only be
+  told apart by the D-Bus error name. Killing dbus-daemon under a live `Manager`
+  was observed to produce `Timeout` on the first calls and then `Failed`
+  ("Failed to send message"); a live bus without `bluetoothd` gives
+  `ServiceUnknown`. Only `Failed`/`Disconnected` count as "connection lost";
+  `Timeout`, `NoReply`, `ServiceUnknown` and `org.bluez.Error.*` prove the
+  connection works.
+- Even then it is rebuilt only after `MANAGER_RECREATE_AFTER` (5) such
+  failures in a row, since `Failed` is a generic name. An old connection that
+  really was dead has already released its fd (observed: sockets returned to the
+  baseline after the daemon died), so rebuilding it does not leak.
+- A failed `Manager::new()` leaks nothing (the driver is spawned only after the
+  connect succeeds) and is simply retried.
+- Invariant: at most one `Manager` and one `PowerCycler` connection over time,
+  independent of the number of retries.
+- macOS: CoreBluetooth has no connection to leak; the slot never rebuilds there.
+
+**Not verified locally:** reusing the `Manager` means `StartDiscovery` is now
+issued again from the *same* D-Bus client after every session. Previously each
+attempt used a fresh (leaked) client. BlueZ is expected to accept a repeated
+`StartDiscovery` from the same sender; confirm on the homelab (stream end,
+stall → power-cycle, adapter re-plug).
+
+### 1b. Scanner health — `GET /health`
+
+The supervisor never returns, so a scanner stuck in a retry loop looked
+identical to a healthy one: the pod stayed `Running`, the API answered, nothing
+was stored, and nothing alerted. `health::ScannerHealth` (shared `Arc`) records
+`last_event_at` (any BLE advertisement), `last_reading_stored_at`,
+`session_state` (`scanning` | `retrying`), `last_error` and
+`consecutive_failures` (reset by the next event).
+
+`GET /health` returns **200** if the scanner saw an event within
+`HEALTH_MAX_SILENCE_SECONDS` (default 600) *or the process is younger than that*
+(startup grace), **503** otherwise; the JSON body is the same in both cases.
+The signal is "any BLE event", not "a stored reading": the homelab sees ~26
+devices, so ten silent minutes means the stack is broken, whereas one meter out
+of range or with a flat battery must not fail the probe.
+
+k3s `livenessProbe` (`deploy/k3s/30-deployment.yaml`): `httpGet /health` :8090,
+`initialDelaySeconds: 60`, `periodSeconds: 60`, `failureThreshold: 3` — the pod
+restarts ~13 minutes after collection stops (10 min of silence + 3 probes). A
+new process starts with zero D-Bus connections, so an unrecoverable condition
+(missing adapter, `bluetoothd` gone, saturation) becomes a visible restart /
+`CrashLoopBackOff` instead of weeks of silence. systemd has no equivalent.
 
 ### 2. Adapter selection — `BLE_ADAPTER`
 
@@ -153,7 +225,10 @@ forward.
 ## Testing
 
 Pure-function unit tests in `scanner.rs` (`strip_adapter_prefix`,
-`adapter_matches`, `next_backoff`). The supervisor loop, the stall
+`adapter_matches`, `next_backoff`), `ManagerSlot` tests (300 failed attempts —
+`AdapterNotFound` or `Stalled` — create exactly one `Manager`; a rebuild needs 5
+consecutive lost-connection failures), `health.rs` unit tests, and API tests for
+`/health` (200 in the grace period, 503 when silent, 200 with recent events). The supervisor loop, the stall
 watchdog + power-cycle, and the migration merge are verified manually
 (no async-BLE or migration-state harness exists — consistent with how
 0002 was covered). The `bluez-async` power-cycle code is Linux-only, so
@@ -165,7 +240,9 @@ adapter` → `BLE scan started` → readings resume, no pod restart.
 
 ## Operational
 
-k3s configmap: `BLE_ADAPTER: "usb:2357:0604"` and
-`READING_INTERVAL_SECONDS: "30"`. Host: disable USB autosuspend for BT adapters
+k3s configmap: `BLE_ADAPTER: "usb:2357:0604"` (never `hciN`: the number changes
+across reboots — it was `hci1`, `hci2`, then `hci0`) and
+`READING_INTERVAL_SECONDS: "30"`. Check for a leak with
+`kubectl exec <pod> -- sh -c 'ls -l /proc/1/fd | grep -c socket'` (flat and low). Host: disable USB autosuspend for BT adapters
 (`/etc/modprobe.d/btusb.conf` → `options btusb enable_autosuspend=0`) so
 the dongle stops wedging in the first place.

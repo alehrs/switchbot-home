@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
 
@@ -10,6 +11,7 @@ use tracing::{debug, info, warn};
 
 use crate::ble::switchbot;
 use crate::domain::NewReading;
+use crate::health::ScannerHealth;
 use crate::storage::SqliteStorage;
 
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +67,117 @@ const HEALTHY_SESSION: StdDuration = StdDuration::from_secs(30);
 const EVENT_TIMEOUT: StdDuration = StdDuration::from_secs(120);
 /// Cap on the per-device MAC-resolution D-Bus round-trip.
 const MAC_LOOKUP_TIMEOUT: StdDuration = StdDuration::from_secs(10);
+/// Consecutive attempts failing with a lost system-bus connection before the
+/// btleplug `Manager` is rebuilt. See `ManagerSlot`.
+const MANAGER_RECREATE_AFTER: u32 = 5;
+
+/// Owns the btleplug `Manager` for the scanner's whole lifetime.
+///
+/// On BlueZ, `Manager::new()` opens a system-bus connection whose driver task
+/// btleplug spawns and then discards the handle of, so dropping a `Manager`
+/// does **not** close it. Creating one per scan attempt therefore leaked one
+/// connection per retry until dbus-daemon refused the process (256 per UID),
+/// after which nothing could recover short of a restart. Create it once and
+/// reuse it across every retry instead.
+///
+/// It is rebuilt only when its connection looks dead — see `connection_lost`
+/// — and only after `MANAGER_RECREATE_AFTER` such failures in a row, because
+/// rebuilding a *live* connection is itself the leak. Rebuilding a dead one
+/// is not: its driver task has ended, so the old fd is already closed.
+struct ManagerSlot<M> {
+    manager: Option<M>,
+    lost_connection_streak: u32,
+}
+
+impl<M> ManagerSlot<M> {
+    fn new() -> Self {
+        Self {
+            manager: None,
+            lost_connection_streak: 0,
+        }
+    }
+
+    /// The current `Manager`, created on first use. A failed creation leaves
+    /// nothing behind (btleplug spawns the driver only after connecting), so
+    /// retrying it is leak-free.
+    async fn get_or_create<F, Fut>(&mut self, create: F) -> Result<&M, BleError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<M, btleplug::Error>>,
+    {
+        if self.manager.is_none() {
+            self.manager = Some(create().await?);
+        }
+        Ok(self.manager.as_ref().expect("manager was just created"))
+    }
+
+    /// Records how an attempt ended. `connection_lost` is whether the failure
+    /// points at the system-bus connection rather than at the adapter.
+    fn record_attempt(&mut self, connection_lost: bool) {
+        // Without a manager there is nothing to rebuild, and a failed
+        // creation must not pre-load the streak of the next one.
+        if !connection_lost || self.manager.is_none() {
+            self.lost_connection_streak = 0;
+            return;
+        }
+        self.lost_connection_streak += 1;
+        if self.lost_connection_streak >= MANAGER_RECREATE_AFTER {
+            warn!(
+                failures = self.lost_connection_streak,
+                "system D-Bus connection appears dead; recreating the BLE manager"
+            );
+            self.manager = None;
+            self.lost_connection_streak = 0;
+        }
+    }
+}
+
+/// Whether a failed attempt says the `Manager`'s own system-bus connection is
+/// dead, as opposed to the adapter being missing, stalled or refusing a
+/// request — none of which a new connection would fix.
+fn connection_lost(err: &BleError) -> bool {
+    match err {
+        BleError::Btleplug(err) => btleplug_connection_lost(err),
+        _ => false,
+    }
+}
+
+/// btleplug's BlueZ backend reports every D-Bus failure as
+/// `Error::Other(BluetoothError::DbusError(_))`, so the D-Bus error name is
+/// the only thing left to tell them apart. Linux only: CoreBluetooth has no
+/// system-bus connection to leak, so there it is never "lost".
+#[cfg(target_os = "linux")]
+fn btleplug_connection_lost(err: &btleplug::Error) -> bool {
+    use bluez_async::BluetoothError;
+
+    let btleplug::Error::Other(source) = err else {
+        return false;
+    };
+    match source.downcast_ref::<BluetoothError>() {
+        Some(BluetoothError::DbusError(err)) => is_local_dbus_failure(err.name()),
+        _ => false,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn btleplug_connection_lost(_err: &btleplug::Error) -> bool {
+    false
+}
+
+/// D-Bus error names that a *dead local connection* produces. Observed by
+/// killing dbus-daemon under a live btleplug `Manager`: the first calls time
+/// out (`Timeout`), then every call fails locally with `Failed` ("Failed to
+/// send message"). `Disconnected` is libdbus's own name for it, not observed.
+/// A reply from a live bus or from `bluetoothd` — `ServiceUnknown` when
+/// `bluetoothd` is down, `NoReply`/`Timeout` when it hangs, `org.bluez.Error.*`
+/// — proves the connection works, so those must not trigger a rebuild.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn is_local_dbus_failure(name: Option<&str>) -> bool {
+    matches!(
+        name,
+        Some("org.freedesktop.DBus.Error.Failed" | "org.freedesktop.DBus.Error.Disconnected")
+    )
+}
 
 /// Scans for BLE advertisements forever, storing every SwitchBot
 /// Meter/Meter Plus reading it recognizes.
@@ -82,6 +195,7 @@ const MAC_LOOKUP_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 /// `adapter_matches`); unset picks the first adapter found.
 pub async fn run(
     storage: Arc<SqliteStorage>,
+    health: Arc<ScannerHealth>,
     reading_interval: Option<Duration>,
     adapter_name: Option<String>,
 ) {
@@ -93,6 +207,7 @@ pub async fn run(
     // didn't take gets tried again rather than leaving the adapter off.
     let mut needs_power_cycle = false;
     let mut power_cycler = None;
+    let mut manager_slot = ManagerSlot::new();
     loop {
         if needs_power_cycle {
             // An HCI reset is what actually revives a wedged dongle; a
@@ -101,13 +216,22 @@ pub async fn run(
         }
 
         let started = Instant::now();
-        let outcome = scan_session(
-            &storage,
-            reading_interval,
-            adapter_name.as_deref(),
-            &mut state,
-        )
-        .await;
+        let outcome = match manager_slot.get_or_create(Manager::new).await {
+            Ok(manager) => {
+                scan_session(
+                    manager,
+                    &storage,
+                    &health,
+                    reading_interval,
+                    adapter_name.as_deref(),
+                    &mut state,
+                )
+                .await
+            }
+            Err(err) => Err(err),
+        };
+        manager_slot.record_attempt(outcome.as_ref().err().is_some_and(connection_lost));
+        health.record_session_ended(outcome.as_ref().err().map(ToString::to_string));
 
         let stalled = matches!(outcome, Err(BleError::Stalled(_)));
         let clean = ran_clean(started.elapsed(), stalled);
@@ -147,17 +271,19 @@ fn ran_clean(elapsed: StdDuration, stalled: bool) -> bool {
 /// advertisement stream until it ends or errors. Returns `Ok(())` when
 /// the stream simply ends (the common case on an adapter reset).
 async fn scan_session(
+    manager: &Manager,
     storage: &SqliteStorage,
+    health: &ScannerHealth,
     reading_interval: Option<Duration>,
     adapter_name: Option<&str>,
     state: &mut ScannerState,
 ) -> Result<(), BleError> {
-    let manager = Manager::new().await?;
-    let adapter = select_adapter(&manager, adapter_name).await?;
+    let adapter = select_adapter(manager, adapter_name).await?;
 
     adapter.start_scan(ScanFilter::default()).await?;
     let info = adapter.adapter_info().await.unwrap_or_default();
     info!(adapter = %info, "BLE scan started");
+    health.record_scan_started();
 
     let mut events = adapter.events().await?;
     loop {
@@ -169,6 +295,7 @@ async fn scan_session(
             Ok(None) => return Ok(()),
             Err(_) => return Err(BleError::Stalled(EVENT_TIMEOUT)),
         };
+        health.record_event();
 
         // A single advertising PDU arrives as separate service-data and
         // manufacturer-data events. Both can yield a reading; the common
@@ -250,7 +377,9 @@ async fn scan_session(
             state.mac_known.insert(device_id.clone());
         }
 
-        store_reading(storage, &device_id, mac_address.as_deref(), parsed).await;
+        if store_reading(storage, &device_id, mac_address.as_deref(), parsed).await {
+            health.record_reading_stored();
+        }
         state.last_stored.insert(device_id, Utc::now());
     }
 }
@@ -409,12 +538,13 @@ async fn fetch_mac_address(adapter: &Adapter, id: &PeripheralId) -> Option<Strin
     (properties.address != BDAddr::default()).then(|| properties.address.to_string())
 }
 
+/// Returns whether a reading was actually stored (not blacklisted, no error).
 async fn store_reading(
     storage: &SqliteStorage,
     device_id: &str,
     mac_address: Option<&str>,
     parsed: switchbot::ParsedReading,
-) {
+) -> bool {
     let now = Utc::now();
     let device = match storage
         .upsert_device_seen(device_id, mac_address, now)
@@ -423,7 +553,7 @@ async fn store_reading(
         Ok(device) => device,
         Err(err) => {
             warn!(device = device_id, error = %err, "failed to record device sighting");
-            return;
+            return false;
         }
     };
     let Some(_device) = device else {
@@ -431,7 +561,7 @@ async fn store_reading(
             device = device_id,
             "skipping reading for blacklisted device"
         );
-        return;
+        return false;
     };
 
     let reading = NewReading {
@@ -443,6 +573,7 @@ async fn store_reading(
     };
     if let Err(err) = storage.insert_reading(&reading).await {
         warn!(device = device_id, error = %err, "failed to store reading");
+        false
     } else {
         info!(
             device = device_id,
@@ -450,6 +581,7 @@ async fn store_reading(
             humidity = parsed.humidity,
             "reading stored"
         );
+        true
     }
 }
 
@@ -580,6 +712,110 @@ mod tests {
             "nope/also-nope/200",
             "usb:bad:also-bad"
         ));
+    }
+
+    /// Drives `slot` through `attempts` failed attempts the way `run` does,
+    /// returning how many `Manager`s were created.
+    async fn count_creations(
+        slot: &mut ManagerSlot<()>,
+        attempts: usize,
+        failure: impl Fn() -> BleError,
+    ) -> u32 {
+        let created = std::sync::atomic::AtomicU32::new(0);
+        for _ in 0..attempts {
+            slot.get_or_create(|| async {
+                created.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await
+            .unwrap();
+            slot.record_attempt(connection_lost(&failure()));
+        }
+        created.into_inner()
+    }
+
+    #[tokio::test]
+    async fn failed_retries_reuse_one_manager_instead_of_creating_one_per_attempt() {
+        // The original leak: a non-matching BLE_ADAPTER retried forever.
+        let mut slot = ManagerSlot::new();
+        let created = count_creations(&mut slot, 300, || {
+            BleError::AdapterNotFound("hci2".to_string())
+        })
+        .await;
+
+        assert_eq!(created, 1);
+    }
+
+    #[tokio::test]
+    async fn stalls_do_not_recreate_the_manager() {
+        let mut slot = ManagerSlot::new();
+        let created = count_creations(&mut slot, 300, || BleError::Stalled(EVENT_TIMEOUT)).await;
+
+        assert_eq!(created, 1);
+    }
+
+    #[test]
+    fn only_a_dead_local_connection_counts_as_a_lost_connection() {
+        assert!(is_local_dbus_failure(Some(
+            "org.freedesktop.DBus.Error.Failed"
+        )));
+        assert!(is_local_dbus_failure(Some(
+            "org.freedesktop.DBus.Error.Disconnected"
+        )));
+        // Replies from a live bus / bluetoothd: the connection works.
+        assert!(!is_local_dbus_failure(Some(
+            "org.freedesktop.DBus.Error.NoReply"
+        )));
+        assert!(!is_local_dbus_failure(Some(
+            "org.freedesktop.DBus.Error.Timeout"
+        )));
+        assert!(!is_local_dbus_failure(Some(
+            "org.freedesktop.DBus.Error.ServiceUnknown"
+        )));
+        assert!(!is_local_dbus_failure(Some("org.bluez.Error.NotReady")));
+        assert!(!is_local_dbus_failure(None));
+    }
+
+    #[test]
+    fn the_manager_is_rebuilt_only_after_enough_consecutive_lost_connections() {
+        let mut slot = ManagerSlot::<()>::new();
+        slot.manager = Some(());
+
+        for _ in 0..MANAGER_RECREATE_AFTER - 1 {
+            slot.record_attempt(true);
+        }
+        assert!(slot.manager.is_some());
+
+        slot.record_attempt(true);
+        assert!(slot.manager.is_none());
+        assert_eq!(slot.lost_connection_streak, 0);
+    }
+
+    #[test]
+    fn an_attempt_that_does_not_lose_the_connection_resets_the_streak() {
+        let mut slot = ManagerSlot::<()>::new();
+        slot.manager = Some(());
+
+        for _ in 0..MANAGER_RECREATE_AFTER - 1 {
+            slot.record_attempt(true);
+        }
+        slot.record_attempt(false);
+        slot.record_attempt(true);
+
+        assert!(slot.manager.is_some());
+    }
+
+    #[test]
+    fn failed_creations_do_not_pre_load_the_streak_of_the_next_manager() {
+        let mut slot = ManagerSlot::<()>::new();
+        for _ in 0..MANAGER_RECREATE_AFTER * 2 {
+            slot.record_attempt(true);
+        }
+
+        slot.manager = Some(());
+        slot.record_attempt(true);
+
+        assert!(slot.manager.is_some());
     }
 
     #[test]

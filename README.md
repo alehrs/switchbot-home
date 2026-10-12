@@ -94,6 +94,11 @@ Configuration is via environment variables, all optional:
   example `usb:2357:0604`) instead matches the physical USB device from
   sysfs and survives `hciN` renumbering, even when BlueZ reports the
   parent hub's modalias. Default (unset): the first adapter found.
+- `HEALTH_MAX_SILENCE_SECONDS` — how long the BLE scanner may go without
+  seeing *any* advertisement before `GET /health` answers 503 (default
+  `600`, must be greater than 0). It is also the startup grace period.
+  The k3s liveness probe uses `/health`, so this is how long collection
+  can be dead before Kubernetes restarts the pod.
 
 ### BLE scanning
 
@@ -128,6 +133,7 @@ PUT  /devices/{device_id}               partial update: label, room, blacklisted
 GET  /devices/{device_id}/latest        latest reading for one device
 GET  /devices/{device_id}/readings      historical readings (?from=&to=, default: last 24h)
 GET  /readings/latest                   latest reading per device, excluding blacklisted ones
+GET  /health                            scanner health: 200 if it saw a BLE event recently, else 503
 ```
 
 Devices are auto-discovered: the first BLE advertisement from a sensor
@@ -219,3 +225,45 @@ sudo modprobe -r btusb && sudo modprobe btusb   # or reboot
 
 Manual one-off recovery without touching the host config:
 `bluetoothctl power off` then `bluetoothctl power on` (no root needed).
+
+### Logs say `The maximum number of active connections for UID 0 has been reached`
+
+Symptom: the pod is `Running` and the API answers, but nothing is stored,
+and every scan attempt logs the error above (or `GET /health` returns 503).
+BlueZ's D-Bus daemon allows 256 system-bus connections per UID, **shared by
+every root process on the host**, and this process has used them all.
+
+Count the sockets the backend holds (a healthy process has a handful —
+a few D-Bus connections plus the HTTP and SQLite ones — and the number
+stays flat):
+
+```
+kubectl -n switchbot-home exec deploy/switchbot-home-backend -- sh -c 'ls -l /proc/1/fd | grep -c socket'
+```
+
+A count that climbs over time, or sits at 256, is a connection leak. Only
+restarting the process frees them:
+`kubectl -n switchbot-home rollout restart deploy/switchbot-home-backend`.
+The backend creates one btleplug `Manager` for its lifetime (older versions
+made one per retry, each leaking a connection), so a leak is a bug to report.
+
+The usual *trigger* is a `BLE_ADAPTER` that no longer matches: the `hciN`
+number changes across reboots, so use `usb:vvvv:pppp` rather than `hciN`.
+The log line `available BLE adapter (none matched BLE_ADAPTER)` lists what
+is actually there.
+
+### `GET /health`
+
+```
+curl -s localhost:8090/health
+{"healthy":true,"session_state":"scanning","last_event_at":"…","last_reading_stored_at":"…","last_error":null,"consecutive_failures":0}
+```
+
+`200` while the scanner has seen any BLE advertisement within
+`HEALTH_MAX_SILENCE_SECONDS` (or the process is younger than that), `503`
+otherwise; the body is the same either way. `last_error` says why the last
+scan session ended, `consecutive_failures` how many in a row have failed.
+Healthy but with an old `last_reading_stored_at` means the scanner works and
+a particular meter is out of range or has a flat battery — not a backend
+problem. On k3s the liveness probe restarts the pod about 13 minutes after
+`/health` starts failing; systemd has no equivalent, so watch it yourself.

@@ -2,16 +2,18 @@ mod api;
 mod ble;
 mod config;
 mod domain;
+mod health;
 mod retention;
 mod storage;
 
 use std::sync::Arc;
 
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use config::Config;
+use health::ScannerHealth;
 use storage::SqliteStorage;
 
 #[tokio::main]
@@ -32,13 +34,18 @@ async fn main() {
     // BLE scanning runs independently of the HTTP server: it supervises
     // itself (reconnecting on adapter resets) and never returns, but even
     // if that ever changed, a scan problem shouldn't take the API down.
+    let scanner_health = Arc::new(ScannerHealth::new(
+        Utc::now(),
+        Duration::seconds(config.health_max_silence_secs as i64),
+    ));
     let reading_interval = config
         .reading_interval_secs
         .map(|secs| Duration::seconds(secs as i64));
     tokio::spawn({
         let storage = Arc::clone(&storage);
+        let scanner_health = Arc::clone(&scanner_health);
         let ble_adapter = config.ble_adapter.clone();
-        async move { ble::run(storage, reading_interval, ble_adapter).await }
+        async move { ble::run(storage, scanner_health, reading_interval, ble_adapter).await }
     });
 
     if let Some(retention_days) = config.retention_days {
@@ -48,7 +55,7 @@ async fn main() {
         });
     }
 
-    let app = api::router(storage);
+    let app = api::router(storage, scanner_health);
     let listener = TcpListener::bind(&config.bind_address)
         .await
         .expect("failed to bind HTTP listener");

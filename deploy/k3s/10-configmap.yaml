@@ -13,10 +13,16 @@ data:
   # ADV_IND (a few per second per meter) is a row — ~14k rows in the
   # first day on this deploy.
   READING_INTERVAL_SECONDS: "30"
-  # Pin the TP-Link UB500 by its physical USB vendor/product IDs. Its hciN
-  # number can change (it is currently hci2), and BlueZ reports its
-  # modalias as the generic root hub rather than the dongle's own ID.
+  # Pin the TP-Link UB500 by its physical USB vendor/product IDs, never by
+  # hciN: the number is reassigned on every reboot or re-plug (hci1, hci2,
+  # hci0 on this node so far), and BlueZ reports the dongle's modalias as
+  # the generic root hub rather than its own ID. A pinned hciN that stops
+  # matching silently stops all collection.
   BLE_ADAPTER: "usb:2357:0604"
+  # GET /health (the liveness probe) answers 503 once the scanner has seen
+  # no BLE advertisement at all for this long, and kubelet restarts the pod
+  # ~3 minutes after that. Also the grace period after startup. Default 600.
+  # HEALTH_MAX_SILENCE_SECONDS: "600"
   # Delete readings older than N days (checked hourly). Left off: keep
   # everything for now. Uncomment and redeploy to enable.
   # RETENTION_DAYS: "300"

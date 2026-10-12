@@ -13,7 +13,12 @@ pub struct Config {
     /// so either an `hciN` name or a USB modalias fragment works. `None`
     /// (the default, when unset) means the first adapter found.
     pub ble_adapter: Option<String>,
+    /// How long the scanner may go without seeing any BLE advertisement
+    /// before `GET /health` reports 503. Also the startup grace period.
+    pub health_max_silence_secs: u64,
 }
+
+const DEFAULT_HEALTH_MAX_SILENCE_SECS: u64 = 600;
 
 impl Config {
     pub fn from_env() -> Self {
@@ -25,7 +30,18 @@ impl Config {
             reading_interval_secs: env_positive_int("READING_INTERVAL_SECONDS"),
             retention_days: env_positive_int("RETENTION_DAYS"),
             ble_adapter: std::env::var("BLE_ADAPTER").ok().filter(|s| !s.is_empty()),
+            health_max_silence_secs: health_max_silence_secs(),
         }
+    }
+}
+
+/// `0` would make `/health` fail permanently, so unlike the other numeric
+/// variables it is rejected rather than accepted.
+fn health_max_silence_secs() -> u64 {
+    match env_positive_int("HEALTH_MAX_SILENCE_SECONDS") {
+        None => DEFAULT_HEALTH_MAX_SILENCE_SECS,
+        Some(0) => panic!("HEALTH_MAX_SILENCE_SECONDS must be greater than 0"),
+        Some(secs) => secs,
     }
 }
 

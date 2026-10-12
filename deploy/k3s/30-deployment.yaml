@@ -32,6 +32,20 @@ spec:
           envFrom:
             - configMapRef:
                 name: switchbot-home-backend-config
+          # The scanner supervises itself but cannot always recover (no
+          # matching adapter, bluetoothd gone, D-Bus saturated): the API then
+          # keeps answering while nothing is collected. /health returns 503
+          # after HEALTH_MAX_SILENCE_SECONDS (default 600) without a BLE
+          # event; 3 failed probes a minute apart restart the pod ~13 min
+          # after collection stopped, which also frees any D-Bus connections.
+          # Port 8090 must match BIND_ADDRESS in 10-configmap.yaml.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 3
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "NET_RAW"]
