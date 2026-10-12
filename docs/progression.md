@@ -1220,3 +1220,69 @@ Entry format:
 - Reworked BLE adapter power recovery to keep one D-Bus session for the scanner lifetime and reconnect if its dispatch task terminates.
 - Restored the live deployment with its current `hci2` adapter and verified that fresh readings are being stored; the permanent source change is tracked in PR #8.
 - Followed up on the PR review by removing the unused Linux re-export and detecting a completed D-Bus dispatch task before reusing its controller.
+
+## 2026-10-12 — Diagnosed a 2-week outage: adapter renumbered + btleplug D-Bus connection leak (analysis only)
+- **Symptom**: 0 readings since 2026-09-27 20:12 CEST. Pod `Running`, API up.
+- **Timeline**: host rebooted twice on 2026-09-27; the UB500 came back as
+  `hci0` (internal Realtek `13d3:3416` = `hci1`). Live ConfigMap still had
+  the 2026-09-21 hotfix `BLE_ADAPTER=hci2` → `AdapterNotFound` every 60 s
+  for ~4 h, then from 2026-09-28 00:21 UTC every attempt fails with `The
+  maximum number of active connections for UID 0 has been reached`. Pod
+  holds exactly 256 sockets (= dbus `max_connections_per_user` default).
+- **Root cause (code)**: `scan_session` calls btleplug `Manager::new()` on
+  every attempt; on BlueZ (btleplug 0.12.0) that runs
+  `BluetoothSession::new()`, which `tokio::spawn`s the D-Bus driver and
+  discards the handle — dropping the Manager never closes the connection.
+  One leaked system-bus connection per retry, regardless of cause.
+- **PR #8** (`fix/ble-dbus-recovery-and-usb-adapter`): open, **not merged,
+  not deployed** (live image `088c383` = PR #5). Its `usb:2357:0604`
+  selector would have matched (`PRODUCT=2357/604/200` is visible in the
+  pod's sysfs on `hci0`), but it does not fix the `Manager::new()` leak.
+- Host `btusb enable_autosuspend` still `Y` (no `/etc/modprobe.d/btusb.conf`).
+- Separately: "Camera da letto" last seen 2026-09-23 (before the outage)
+  — likely battery/range, not this bug.
+- Spec for the fix (Manager reuse, merge PR #8, `/health` + k3s liveness
+  probe) saved in the local SDD workspace
+  (`~/.agents/sdd/specs/switchbot-home-ble-scanner-dbus-connection-leak.md`)
+  at the user's request. No code changes, no live changes.
+
+## 2026-10-12 — Fix: one btleplug Manager, `/health`, k3s liveness probe (PR #8, not merged)
+- Implemented the spec `~/.agents/sdd/specs/switchbot-home-ble-scanner-dbus-connection-leak.md`
+  on top of PR #8's branch (`fix/ble-dbus-recovery-and-usb-adapter`).
+- **Leak fix** (`backend/src/ble/scanner.rs`): `run` owns a `ManagerSlot`;
+  the btleplug `Manager` is created once and passed to `scan_session` as
+  `&Manager`. It is rebuilt only after 5 consecutive attempts failing with a
+  lost local D-Bus connection (error name `Failed`/`Disconnected`), never on
+  `AdapterNotFound`/`Stalled`/`org.bluez.*`/`ServiceUnknown`/`Timeout`.
+  btleplug cannot tell us whether the connection is dead, so the D-Bus error
+  name is the only signal; the spec's "N consecutive errors" fallback applies.
+- **Verified empirically in a `rust:1-slim` container** with a private
+  dbus-daemon (throwaway probe, not committed): 10 × `Manager::new()`+drop
+  → sockets 3→13 (leak confirmed); 300 calls on one `Manager` → flat;
+  live bus without bluez → `ServiceUnknown`; daemon killed → `Timeout`×2 then
+  `Failed` "Failed to send message", and sockets fell back to 3 (a dead
+  connection frees its fd, so rebuilding it is safe).
+- **`GET /health`** (`backend/src/health.rs`, `backend/src/api/health.rs`):
+  200 if any BLE event was seen within `HEALTH_MAX_SILENCE_SECONDS`
+  (new, default 600, 0 rejected at startup) or the process is younger than
+  that; else 503; same JSON body. k3s `livenessProbe` on :8090 (60 s initial
+  delay, period 60 s, 3 failures ≈ 13 min to restart). ConfigMap comment
+  corrected: the `hciN` number changes on every reboot; selector stays
+  `usb:2357:0604`.
+- Tests: 58 passing on macOS **and** Linux (container). New: `ManagerSlot`
+  (300 failed attempts → exactly 1 `Manager` created, for both
+  `AdapterNotFound` and `Stalled`; rebuild thresholds; failed creations do not
+  pre-load the streak — caught in review), `health.rs`, and 3 API tests for
+  `/health`. `cargo clippy --all-targets -D warnings` clean on both; touched
+  files `rustfmt --check` clean (pre-existing deviations in `storage.rs` and
+  `api/mod.rs:193` left alone).
+- Docs: README (config var, `/health`, Troubleshooting for "maximum number of
+  active connections" + socket count), `docs/specs/ble-scanner-resilience-and-adapter-selection.md`
+  (§1a, §1b), agent note updated.
+- **Not verified** (needs the homelab after deploy): that a repeated
+  `StartDiscovery` from the same D-Bus client (now that the `Manager` is
+  reused) is accepted by BlueZ after stream end / power-cycle; the live
+  liveness restart; the YAML was only syntax-checked (no cluster for
+  `kubectl --dry-run`).
+- Next: user confirms merge to `main` (triggers the production deploy), then
+  the server procedure (Part 2).
