@@ -1,11 +1,12 @@
 ---
 date: 2026-08-28
-updated: 2026-08-31
+updated: 2026-10-12
 type: decision
 tags: [ble, btleplug, bluez, scanner, adapter, device-id, resilience, realtek, autosuspend]
 files:
   - backend/src/ble/scanner.rs
   - backend/src/ble/adapter_power.rs
+  - backend/src/health.rs
   - backend/src/config.rs
   - backend/migrations/0003_strip_adapter_prefix.sql
 ---
@@ -81,6 +82,59 @@ homelab, `adapter_info()` for the UB500 is `"hci1 (usb:v1D6Bp0246d0552)"`
 UB500's own `2357:0604`. So `BLE_ADAPTER=v2357p0604` would not match
 there; the production configmap pins `BLE_ADAPTER=hci1`. Check the actual
 startup log line before choosing a value.
+
+**Update 2026-09-21 — do not create one power-cycle D-Bus session per
+recovery.** The deployed watchdog created a `bluez-async::BluetoothSession`,
+spawned its dispatch future, and aborted it after each `Powered` off/on toggle.
+After the collector stalled, the pod accumulated 280 open socket FDs and BlueZ
+started returning `The maximum number of active connections for UID 0 has been
+reached`; recovery could no longer run. `PowerCycler` now keeps one session and
+dispatch task for the scanner lifetime. The obvious short-lived-session approach
+is wrong here: `BluetoothSession::new` has already spawned its D-Bus driver, so
+aborting the wrapper task merely detaches that driver instead of closing the
+system-bus connection.
+
+A long-lived session still cannot be trusted after its dispatch task has
+finished (for example, after a system-bus disconnect). `power_cycle` therefore
+checks `dispatch_task.is_finished()` before reuse and again after a toggle,
+then drops the `PowerCycler`; the next recovery creates a new session. Do not
+reset it for every `toggle` error: an adapter that is temporarily unavailable
+does not necessarily mean that its D-Bus connection is dead.
+
+The same outage showed that a physical UB500 may change from `hci1` to `hci2`.
+Its BlueZ modalias is the parent hub, so `BLE_ADAPTER=usb:2357:0604` reads the
+actual `PRODUCT=2357/604/...` from `/sys/class/bluetooth/hciN/device/uevent`
+instead; this survives the name change.
+
+**Update 2026-10-12 — btleplug's own `Manager::new()` leaks a connection too.**
+On BlueZ, btleplug 0.12 `Manager::new()` does `let (_, session) =
+BluetoothSession::new()` — the spawned D-Bus driver task is detached and
+keeps the system-bus connection open after the `Manager` is dropped.
+Calling it once per `scan_session` retry leaked one connection per attempt:
+with a non-matching `BLE_ADAPTER` (retry every 60 s) the pod hit the
+256-connection UID 0 limit in ~4 h and stayed dead for 2 weeks. Measured in
+a `rust:1-slim` container against a private dbus-daemon: 10 × `Manager::new()`
++ drop → socket count 3 → 13; 300 `adapters()` on one `Manager` → flat.
+Quick check on the pod: `kubectl exec <pod> -- sh -c 'ls -l /proc/1/fd | grep -c socket'`.
+
+Fix: `scanner::ManagerSlot` creates the `Manager` once and reuses it. The
+obvious follow-up — "recreate it whenever a D-Bus call fails" — is wrong:
+rebuilding a *live* connection is the leak. btleplug flattens every BlueZ D-Bus
+failure into `Error::Other(BluetoothError::DbusError(_))`, and there is no
+handle to ask the driver task whether it is alive, so the D-Bus error *name*
+is the only signal. Observed by killing dbus-daemon under a live `Manager`:
+`Timeout` for the first calls, then `Failed` ("Failed to send message"); with a
+live bus but no `bluetoothd`: `ServiceUnknown`. Only `Failed`/`Disconnected`
+count as dead, and only 5 in a row (`Failed` is generic). A genuinely dead
+connection releases its fd by itself (sockets returned to baseline), so
+rebuilding *that* is safe. The container probe is the way to re-check this if
+btleplug/bluez-async is ever upgraded.
+
+Defence in depth: `GET /health` (503 after `HEALTH_MAX_SILENCE_SECONDS` of no
+BLE event of any kind) + a k3s `livenessProbe` restart the pod ~13 min after
+collection stops, so any leak path we did not foresee is bounded and visible.
+`BLE_ADAPTER` must be `usb:vvvv:pppp`, never `hciN` (the dongle was hci1, hci2,
+then hci0 across reboots).
 
 ## device_id carried the adapter name
 
